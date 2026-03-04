@@ -1,0 +1,78 @@
+# Prometheus alerting rules for Prefect SPCS platform.
+
+groups:
+  - name: spcs_health
+    rules:
+      # Container restart storm
+      - alert: HighContainerRestarts
+        expr: increase(container_restarts_total[5m]) > 3
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.container }} restarting frequently"
+          description: "{{ $labels.container }} in {{ $labels.service }} has restarted {{ $value }} times in 5 minutes."
+
+      # CPU saturation
+      - alert: HighCPUUsage
+        expr: (container_cpu_usage / container_cpu_limit) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU on {{ $labels.container }}"
+          description: "{{ $labels.container }} CPU at {{ $value | humanize }}% for 10+ minutes."
+
+      # Memory saturation
+      - alert: HighMemoryUsage
+        expr: (container_memory_usage / container_memory_limit) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Memory pressure on {{ $labels.container }}"
+          description: "{{ $labels.container }} memory at {{ $value | humanize }}%. OOM risk."
+
+  - name: prefect_server
+    rules:
+      # Prefect server down
+      - alert: PrefectServerDown
+        expr: up{job="prefect-server"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prefect server is down"
+          description: "No successful scrape of Prefect server for 2+ minutes."
+
+      # High flow failure rate
+      - alert: HighFlowFailureRate
+        expr: rate(prefect_flow_runs_total{state="FAILED"}[15m]) / rate(prefect_flow_runs_total[15m]) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Flow failure rate above 30%"
+          description: "{{ $value | humanizePercentage }} of flow runs are failing."
+
+  - name: vm_workers
+    rules:
+      # Worker offline
+      - alert: WorkerOffline
+        expr: up{job=~"prefect-worker-.*"} == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Worker {{ $labels.instance }} offline"
+          description: "No metrics from {{ $labels.job }} for 3+ minutes."
+
+      # VM disk pressure
+      - alert: DiskSpaceRunningLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk on {{ $labels.instance }}"
+          description: "{{ $labels.instance }} root disk at {{ $value | humanize }}% free."

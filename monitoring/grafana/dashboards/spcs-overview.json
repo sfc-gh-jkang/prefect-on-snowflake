@@ -1,0 +1,530 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Health Home", "url": "/grafana/d/health", "type": "link", "icon": "dashboard", "targetBlank": false },
+    { "title": "Prefect App", "url": "/grafana/d/prefect-app", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "VM Workers", "url": "/grafana/d/prefect-vm-workers", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Alerts", "url": "/grafana/d/prefect-alerts", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "SPCS Logs", "url": "/grafana/d/prefect-spcs-logs", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Logs", "url": "/grafana/d/prefect-logs", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Redis Detail", "url": "/grafana/d/prefect-redis-detail", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Postgres Detail", "url": "/grafana/d/prefect-postgres-detail", "type": "link", "icon": "external link", "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "title": "SPCS Service Health",
+      "description": "Shows whether Prometheus can reach each scrape target that exposes metrics. 1 = UP, 0 = DOWN. The SPCS worker does not expose a Prometheus /metrics endpoint — its health is tracked via SPCS readinessProbe and Prefect server metrics.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "up{job=~\"prefect-server|prometheus|grafana|loki|redis|postgres|prefect-app\"}",
+          "legendFormat": "{{ job }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 1, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "SPCS Worker Status",
+      "description": "Prefect SPCS worker does not expose Prometheus metrics. Health is tracked via: 1) SPCS readinessProbe on /health, 2) prefect_workers metric from Prefect server. This panel shows the scrape target existence (up metric) — 0 is expected since the worker has no /metrics endpoint.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 4 },
+      "targets": [
+        {
+          "expr": "count(up{job=\"prefect-worker-spcs\"}) OR vector(0)",
+          "legendFormat": "Worker Target Registered",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "NOT REGISTERED", "color": "red" }, "1": { "text": "REGISTERED", "color": "green" } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 1, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Services UP / Expected",
+      "description": "Ratio of reachable scrape targets (with real /metrics endpoints) to total expected. Counts: prefect-server, prometheus, grafana, loki. The SPCS worker is excluded — it has no metrics endpoint.",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 4 },
+      "targets": [
+        {
+          "expr": "count(up{job=~\"prefect-server|prometheus|grafana|loki|redis|postgres|prefect-app\"} == 1) / count(up{job=~\"prefect-server|prometheus|grafana|loki|redis|postgres|prefect-app\"})",
+          "legendFormat": "UP ratio",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 0.5, "color": "orange" },
+              { "value": 0.8, "color": "yellow" },
+              { "value": 1, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Prefect Server Uptime",
+      "description": "Time since the Prefect server process started.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 4 },
+      "targets": [
+        {
+          "expr": "time() - process_start_time_seconds{job=\"prefect-server\"}",
+          "legendFormat": "Uptime",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Scrape Duration (seconds)",
+      "description": "How long each Prometheus scrape takes. High values may indicate target issues.",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "scrape_duration_seconds{job=~\"prefect-server|prometheus|grafana|loki|redis|postgres|prefect-app\"}",
+          "legendFormat": "{{ job }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Samples Scraped per Target",
+      "description": "Number of metric samples collected from each target per scrape.",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "scrape_samples_scraped{job=~\"prefect-server|prometheus|grafana|loki|redis|postgres|prefect-app\"}",
+          "legendFormat": "{{ job }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Process CPU Usage (SPCS services)",
+      "description": "CPU seconds consumed by each monitored process. Rising rate = active CPU usage.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "targets": [
+        {
+          "expr": "rate(process_cpu_seconds_total{job=~\"prefect-server|prometheus|grafana|loki|postgres|prefect-app\"}[5m])",
+          "legendFormat": "{{ job }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Process Resident Memory (SPCS services)",
+      "description": "Resident memory (RSS) of each monitored process.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "targets": [
+        {
+          "expr": "process_resident_memory_bytes{job=~\"prefect-server|prometheus|grafana|loki|postgres|prefect-app\"}",
+          "legendFormat": "{{ job }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Prometheus HTTP Request Rate",
+      "description": "Rate of HTTP requests handled by the Prometheus server itself.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "targets": [
+        {
+          "expr": "sum by(code, handler) (rate(prometheus_http_requests_total[5m]))",
+          "legendFormat": "{{ code }} {{ handler }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "fillOpacity": 10, "stacking": { "mode": "normal" } }
+        }
+      }
+    },
+    {
+      "title": "Prometheus TSDB Stats",
+      "description": "Number of time series currently stored in the Prometheus TSDB.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 22 },
+      "targets": [
+        {
+          "expr": "prometheus_tsdb_head_series",
+          "legendFormat": "Head Series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "blue" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Prometheus Storage Size",
+      "description": "Current on-disk size of the Prometheus TSDB.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 22 },
+      "targets": [
+        {
+          "expr": "prometheus_tsdb_storage_blocks_bytes",
+          "legendFormat": "Storage",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "blue" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Loki Ingestion Rate",
+      "description": "Rate of log lines ingested by Loki, by tenant.",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 30 },
+      "targets": [
+        {
+          "expr": "sum(rate(loki_distributor_lines_received_total[5m]))",
+          "legendFormat": "lines/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Loki Ingested Bytes Rate",
+      "description": "Rate of log bytes ingested by Loki.",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 30 },
+      "targets": [
+        {
+          "expr": "sum(rate(loki_distributor_bytes_received_total[5m]))",
+          "legendFormat": "bytes/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Redis Memory Usage",
+      "description": "Total memory used by Redis, including dataset, overhead, and buffers.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 36 },
+      "targets": [
+        {
+          "expr": "redis_memory_used_bytes{job=\"redis\"}",
+          "legendFormat": "Used",
+          "refId": "A"
+        },
+        {
+          "expr": "redis_memory_max_bytes{job=\"redis\"}",
+          "legendFormat": "Max",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Redis Commands/sec",
+      "description": "Rate of commands processed by Redis.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 36 },
+      "targets": [
+        {
+          "expr": "rate(redis_commands_processed_total{job=\"redis\"}[5m])",
+          "legendFormat": "commands/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Redis Connected Clients",
+      "description": "Number of connected clients to Redis. Prefect server and worker are the primary consumers.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 36 },
+      "targets": [
+        {
+          "expr": "redis_connected_clients{job=\"redis\"}",
+          "legendFormat": "clients",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "PostgreSQL Active Connections",
+      "description": "Number of active connections to the Snowflake Managed Postgres instance, grouped by state.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 44 },
+      "targets": [
+        {
+          "expr": "sum by (state) (pg_stat_activity_count{job=\"postgres\"})",
+          "legendFormat": "{{ state }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "PostgreSQL Transaction Rate",
+      "description": "Rate of committed and rolled-back transactions.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 44 },
+      "targets": [
+        {
+          "expr": "rate(pg_stat_database_xact_commit{job=\"postgres\"}[5m])",
+          "legendFormat": "commits/sec",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(pg_stat_database_xact_rollback{job=\"postgres\"}[5m])",
+          "legendFormat": "rollbacks/sec",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "PostgreSQL Cache Hit Ratio",
+      "description": "Buffer cache hit ratio. Values close to 1.0 mean most reads are served from cache. Low values indicate excessive disk I/O.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 44 },
+      "targets": [
+        {
+          "expr": "pg_stat_database_blks_hit{job=\"postgres\"} / (pg_stat_database_blks_hit{job=\"postgres\"} + pg_stat_database_blks_read{job=\"postgres\"})",
+          "legendFormat": "hit ratio",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Service Status — SPCS Targets",
+      "description": "Each SPCS service and its current reachability. Green = UP (metrics scraped), Red = DOWN (unreachable or no metrics). Only services with real Prometheus endpoints are shown.",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 52 },
+      "targets": [
+        {
+          "expr": "up{job!=\"prefect-worker-spcs\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true
+            },
+            "renameByName": {
+              "job": "Service",
+              "instance": "Endpoint",
+              "Value": "UP",
+              "service": "SPCS Service",
+              "environment": "Environment",
+              "worker_location": "Worker Location",
+              "worker_pool": "Worker Pool"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "UP" },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  { "type": "value", "options": { "1": { "text": "UP", "color": "green" } } },
+                  { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" } } }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-background" }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "External VM Workers — Heartbeat",
+      "description": "VM workers pushing metrics via remote_write. Shows last seen time per worker_location. No data until VM monitoring agents are deployed.",
+      "type": "table",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 60 },
+      "targets": [
+        {
+          "expr": "max by (worker_location, worker_pool) (timestamp(node_cpu_seconds_total{mode=\"idle\"}) > 0)",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "worker_location": "Location",
+              "worker_pool": "Work Pool",
+              "Value": "Last Seen (epoch)"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "footer": { "show": false }
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["prefect", "spcs"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Prefect SPCS — Overview",
+  "uid": "prefect-spcs-overview"
+}

@@ -1,0 +1,11 @@
+spec:
+  containers:
+    - name: pf-trigger-job
+      image: /prefect_db/prefect_schema/prefect_repository/prefect-worker:latest
+      command:
+        - prefect
+        - deployment
+        - run
+        - "example-flow/example-flow-local"
+      env:
+        PREFECT_API_URL: "http://pf-server:4200/api"

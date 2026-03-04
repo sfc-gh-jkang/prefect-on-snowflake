@@ -1,0 +1,39 @@
+# Local auth-proxy — bypasses SPCS auth gate for Prefect CLI operations.
+#
+# The SPCS auth gate intercepts unauthenticated requests (like Prefect's
+# CSRF preflight) and returns HTML redirects instead of JSON, causing
+# JSONDecodeError in the Prefect client. This nginx proxy injects the
+# Snowflake PAT header into every request, identical to the GCP/AWS
+# worker auth-proxy pattern.
+#
+# Required env vars (set in .env):
+#   SNOWFLAKE_PAT   — Snowflake programmatic access token
+#   SPCS_ENDPOINT   — SPCS public endpoint hostname (no https://)
+#
+# Usage:
+#   docker compose -f docker-compose.auth-proxy.yaml up -d
+#   export PREFECT_API_URL=http://localhost:4202/api
+#   cd flows && prefect deploy --all --prefect-file ../prefect.yaml
+
+services:
+  auth-proxy:
+    image: nginx:alpine
+    volumes:
+      - ./workers/gcp/nginx.conf:/etc/nginx/nginx.conf.template:ro
+    environment:
+      SNOWFLAKE_PAT: "${SNOWFLAKE_PAT:?Set SNOWFLAKE_PAT in .env}"
+      SPCS_ENDPOINT: "${SPCS_ENDPOINT:?Set SPCS_ENDPOINT in .env}"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        envsubst '$$SNOWFLAKE_PAT $$SPCS_ENDPOINT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'
+    ports:
+      - "4202:4200"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4200/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    restart: on-failure

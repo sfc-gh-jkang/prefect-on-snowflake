@@ -1,0 +1,80 @@
+# docker-compose.monitoring-local.yml — Local development monitoring stack.
+#
+# Adds Prometheus, Grafana, and Loki to the local Prefect compose environment.
+# Reuses the same dashboards, alert rules, and provisioning as SPCS for parity.
+#
+# Usage:
+#   docker compose -f docker-compose.yaml \
+#                  -f docker-compose.monitoring-local.yml up -d
+#
+# Access:
+#   Grafana:    http://localhost:3000  (admin/admin)
+#   Prometheus: http://localhost:9090
+#   Loki:       http://localhost:3100
+
+services:
+  # ── Prometheus ─────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.console.libraries=/usr/share/prometheus/console_libraries
+      - --web.console.templates=/usr/share/prometheus/consoles
+    volumes:
+      - ./monitoring/prometheus/prometheus-local.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  # ── Grafana ────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.5.2
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin  # pragma: allowlist secret
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /opt/grafana/dashboards/health.json
+    volumes:
+      # Local datasource config (uses docker service names, not localhost)
+      - ./monitoring/grafana/provisioning/datasources/ds-local.yaml:/etc/grafana/provisioning/datasources/ds.yaml:ro
+      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/provisioning/alerting:/etc/grafana/provisioning/alerting:ro
+      - ./monitoring/grafana/dashboards:/opt/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+    restart: unless-stopped
+
+  # ── Loki ───────────────────────────────────────────────────────────────
+  loki:
+    image: grafana/loki:3.4.3
+    command:
+      - -config.file=/etc/loki/loki-config.yaml
+    volumes:
+      - ./monitoring/loki:/etc/loki:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+
+  # ── Postgres Exporter — scrapes the local compose postgres ─────────────
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.16.0
+    environment:
+      DATA_SOURCE_NAME: "postgresql://prefect:${POSTGRES_PASSWORD:-prefect}@postgres:5432/prefect?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  loki_data:

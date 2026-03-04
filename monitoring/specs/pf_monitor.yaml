@@ -1,0 +1,297 @@
+# PF_MONITOR — Prometheus + Grafana + Loki monitoring stack for Prefect SPCS.
+#
+# Runs on dedicated PREFECT_MONITOR_POOL (CPU_X64_S).
+# Prometheus scrapes all Prefect services via internal DNS.
+# Grafana is the public-facing UI.
+# Loki receives logs from VM agents via HTTP push.
+# VM Prometheus agents push metrics via remote_write.
+spec:
+  containers:
+    # ── Prometheus ──────────────────────────────────────────
+    - name: prometheus
+      image: /prefect_db/prefect_schema/prefect_repository/prometheus:v3.4.1
+      resources:
+        requests:
+          cpu: 0.3
+          memory: 512M
+        limits:
+          cpu: 0.45
+          memory: 1G
+      args:
+        - --config.file=/etc/prometheus/prometheus.yml
+        - --storage.tsdb.path=/prometheus
+        - --storage.tsdb.retention.time=30d
+        - --storage.tsdb.retention.size=40GB
+        - --web.enable-remote-write-receiver
+        - --web.enable-lifecycle
+      volumeMounts:
+        - name: prom-config
+          mountPath: /etc/prometheus
+        - name: prom-data
+          mountPath: /prometheus
+      readinessProbe:
+        port: 9090
+        path: /-/ready
+
+    # ── Grafana ─────────────────────────────────────────────
+    - name: grafana
+      image: /prefect_db/prefect_schema/prefect_repository/grafana:12.0.1
+      resources:
+        requests:
+          cpu: 0.3
+          memory: 256M
+        limits:
+          cpu: 0.45
+          memory: 512M
+      env:
+        GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+        GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s/grafana/"
+        GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+        GF_AUTH_ANONYMOUS_ENABLED: "true"
+        GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+        GF_USERS_ALLOW_SIGN_UP: "false"
+        GF_ALERTING_ENABLED: "true"
+        GF_UNIFIED_ALERTING_ENABLED: "true"
+        GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /opt/grafana/dashboards/health.json
+        GF_ALERTING_WEBHOOK_URL: "https://hooks.example.com/placeholder"
+        GF_DATABASE_TYPE: postgres
+        # NOTE: GF_DATABASE_SSL_MODE is intentionally omitted here.
+        # The GRAFANA_DB_DSN secret already contains the correct sslmode
+        # query parameter per cloud: ?sslmode=require (AWS/Azure) or
+        # ?sslmode=disable (GCP internal PG). Setting it as an env var
+        # would override the DSN and break GCP deployments.
+        # SMTP — Gmail via App Password (port 587, STARTTLS)
+        # Port 465 (implicit SSL) is blocked by SPCS network rules; use 587 instead.
+        GF_SMTP_ENABLED: "true"
+        GF_SMTP_HOST: "smtp.gmail.com:587"
+        GF_SMTP_USER: "CHANGE_ME@example.com"
+        GF_SMTP_FROM_ADDRESS: "CHANGE_ME@example.com"
+        GF_SMTP_FROM_NAME: "Prefect SPCS Monitoring"
+        GF_SMTP_STARTTLS_POLICY: "MandatoryStartTLS"
+        GF_SMTP_ALERT_RECIPIENTS: "CHANGE_ME@example.com"
+      secrets:
+        - snowflakeSecret:
+            objectName: grafana_admin_password
+          secretKeyRef: secret_string  # pragma: allowlist secret
+          envVarName: GF_SECURITY_ADMIN_PASSWORD
+        - snowflakeSecret:
+            objectName: grafana_db_dsn
+          secretKeyRef: secret_string  # pragma: allowlist secret
+          envVarName: GF_DATABASE_URL
+        - snowflakeSecret:
+            objectName: grafana_smtp_password
+          secretKeyRef: secret_string  # pragma: allowlist secret
+          envVarName: GF_SMTP_PASSWORD
+        - snowflakeSecret:
+            objectName: slack_webhook_url
+          secretKeyRef: secret_string  # pragma: allowlist secret
+          envVarName: GF_ALERTING_SLACK_WEBHOOK_URL
+      volumeMounts:
+        - name: grafana-provisioning
+          mountPath: /etc/grafana/provisioning
+        - name: grafana-dashboards
+          mountPath: /opt/grafana/dashboards
+        - name: grafana-data
+          mountPath: /var/lib/grafana
+      readinessProbe:
+        port: 3000
+        path: /grafana/api/health
+
+    # ── Loki ────────────────────────────────────────────────
+    - name: loki
+      image: /prefect_db/prefect_schema/prefect_repository/loki:3.5.0
+      resources:
+        requests:
+          cpu: 0.3
+          memory: 256M
+        limits:
+          cpu: 0.45
+          memory: 512M
+      args:
+        - -config.file=/etc/loki/loki-config.yaml
+      volumeMounts:
+        - name: loki-config
+          mountPath: /etc/loki
+        - name: loki-data
+          mountPath: /loki
+      readinessProbe:
+        port: 3100
+        path: /ready
+
+    # ── Postgres Exporter — Prometheus metrics for Snowflake Managed Postgres ─
+    # Connects to the external Postgres instance used by Prefect server.
+    # The DSN secret must use standard postgresql:// (not +asyncpg).
+    - name: postgres-exporter
+      image: /prefect_db/prefect_schema/prefect_repository/postgres_exporter:v0.16.0
+      resources:
+        requests:
+          cpu: 0.1
+          memory: 64M
+        limits:
+          cpu: 0.15
+          memory: 128M
+      secrets:
+        - snowflakeSecret:
+            objectName: postgres_exporter_dsn
+          secretKeyRef: secret_string  # pragma: allowlist secret
+          envVarName: DATA_SOURCE_NAME
+      readinessProbe:
+        port: 9187
+        path: /metrics
+
+    # ── Prefect Exporter — application-level Prometheus metrics ────────────
+    # Polls the Prefect REST API (flow runs, deployments, work pools) and
+    # exposes them as Prometheus gauges on port 9394.
+    - name: prefect-exporter
+      image: /prefect_db/prefect_schema/prefect_repository/prefect-exporter:v3-status
+      resources:
+        requests:
+          cpu: 0.1
+          memory: 64M
+        limits:
+          cpu: 0.15
+          memory: 128M
+      env:
+        PREFECT_API_URL: "http://pf-server:4200/api"
+        POLL_INTERVAL_SECONDS: "30"
+        EXPORTER_PORT: "9394"
+      readinessProbe:
+        port: 9394
+        path: /metrics
+
+    # ── SPCS Log Poller — bridges event table logs to Loki ────────────────
+    # Queries snowflake.telemetry.events for SPCS container logs and pushes
+    # them to the co-located Loki instance via HTTP push API.
+    # Uses SPCS OAuth token at /snowflake/session/token for Snowflake auth.
+    - name: event-log-poller
+      image: /prefect_db/prefect_schema/prefect_repository/event-log-poller:v5-fix
+      resources:
+        requests:
+          cpu: 0.1
+          memory: 128M
+        limits:
+          cpu: 0.15
+          memory: 256M
+      env:
+        LOKI_PUSH_URL: "http://localhost:3100/loki/api/v1/push"
+        POLL_INTERVAL_SECONDS: "30"
+        LOOKBACK_SECONDS: "60"
+        INITIAL_LOOKBACK_SECONDS: "3600"
+        SNOWFLAKE_WAREHOUSE: "COMPUTE_WH"
+        SNOWFLAKE_DATABASE: "PREFECT_DB"
+        SPCS_SERVICES: "PF_SERVER,PF_WORKER,PF_REDIS,PF_SERVICES,PF_MONITOR"
+
+    # ── Prometheus Backup — periodic TSDB snapshot to stage ──────────────
+    # Creates TSDB snapshots every 6h and uploads to @MONITOR_STAGE/backups/prometheus/.
+    # On cold start (empty TSDB), restores from the latest stage backup.
+    # Uses SPCS OAuth token for stage access — no secrets or EAI needed.
+    - name: prom-backup
+      image: /prefect_db/prefect_schema/prefect_repository/prom-backup:v1
+      resources:
+        requests:
+          cpu: 0.05
+          memory: 64M
+        limits:
+          cpu: 0.1
+          memory: 128M
+      env:
+        BACKUP_INTERVAL_SECONDS: "21600"
+        BACKUP_KEEP_COUNT: "3"
+        PROMETHEUS_URL: "http://localhost:9090"
+        PROMETHEUS_DATA_DIR: "/prometheus"
+        STAGE_BACKUP_PREFIX: "backups/prometheus"
+        RESTORE_ON_COLD_START: "true"
+      volumeMounts:
+        - name: prom-data
+          mountPath: /prometheus
+
+    # ── Loki Backup — periodic data snapshot to stage ────────────────────
+    # Tars Loki chunks/index every 6h and uploads to @MONITOR_STAGE/backups/loki/.
+    # On cold start (empty data dir), restores from the latest stage backup.
+    # The event-log-poller also backfills any remaining gap via INITIAL_LOOKBACK_SECONDS.
+    - name: loki-backup
+      image: /prefect_db/prefect_schema/prefect_repository/loki-backup:v1
+      resources:
+        requests:
+          cpu: 0.05
+          memory: 64M
+        limits:
+          cpu: 0.1
+          memory: 128M
+      env:
+        BACKUP_INTERVAL_SECONDS: "21600"
+        BACKUP_KEEP_COUNT: "3"
+        LOKI_DATA_DIR: "/loki"
+        STAGE_BACKUP_PREFIX: "backups/loki"
+        RESTORE_ON_COLD_START: "true"
+      volumeMounts:
+        - name: loki-data
+          mountPath: /loki
+
+  endpoints:
+    # Grafana UI — public
+    - name: grafana
+      port: 3000
+      public: true
+    # Prometheus remote_write receiver — public (VMs push here)
+    - name: prometheus
+      port: 9090
+      public: true
+    # Loki push endpoint — public (Promtail on VMs pushes here)
+    - name: loki
+      port: 3100
+      public: true
+
+  volumes:
+    # Prometheus config — mounted from stage (v2 syntax)
+    - name: prom-config
+      source: stage
+      stageConfig:
+        name: "@PREFECT_DB.PREFECT_SCHEMA.MONITOR_STAGE/prometheus"
+      uid: 65534
+      gid: 65534
+    # Grafana provisioning — mounted from stage (v2 syntax)
+    - name: grafana-provisioning
+      source: stage
+      stageConfig:
+        name: "@PREFECT_DB.PREFECT_SCHEMA.MONITOR_STAGE/grafana/provisioning"
+      uid: 472
+      gid: 0
+    # Grafana dashboards — mounted from stage (v2 syntax)
+    - name: grafana-dashboards
+      source: stage
+      stageConfig:
+        name: "@PREFECT_DB.PREFECT_SCHEMA.MONITOR_STAGE/grafana/dashboards"
+      uid: 472
+      gid: 0
+    # Loki config — mounted from stage (v2 syntax, includes rules/ subdirectory)
+    - name: loki-config
+      source: stage
+      stageConfig:
+        name: "@PREFECT_DB.PREFECT_SCHEMA.MONITOR_STAGE/loki"
+      uid: 10001
+      gid: 10001
+    # Prometheus TSDB — persistent block storage
+    - name: prom-data
+      source: block
+      size: 50Gi
+      uid: 65534
+      gid: 65534
+    # Grafana data — persistent block storage
+    - name: grafana-data
+      source: block
+      size: 10Gi
+      uid: 472
+      gid: 0
+    # Loki data — persistent block storage
+    - name: loki-data
+      source: block
+      size: 20Gi
+      uid: 10001
+      gid: 10001
+
+  platformMonitor:
+    metricConfig:
+      groups:
+        - system
+        - system_limits

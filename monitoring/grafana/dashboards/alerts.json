@@ -1,0 +1,233 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Health Home", "url": "/grafana/d/health", "type": "link", "icon": "dashboard", "targetBlank": false },
+    { "title": "SPCS Overview", "url": "/grafana/d/prefect-spcs-overview", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Prefect App", "url": "/grafana/d/prefect-app", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "VM Workers", "url": "/grafana/d/prefect-vm-workers", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "SPCS Logs", "url": "/grafana/d/prefect-spcs-logs", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Logs", "url": "/grafana/d/prefect-logs", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Redis Detail", "url": "/grafana/d/prefect-redis-detail", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Postgres Detail", "url": "/grafana/d/prefect-postgres-detail", "type": "link", "icon": "external link", "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "title": "Firing Alerts",
+      "description": "Number of currently firing alerts.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\"}) OR vector(0)",
+          "legendFormat": "firing",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 1, "color": "red" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background_gradient",
+        "graphMode": "none"
+      }
+    },
+    {
+      "title": "Pending Alerts",
+      "description": "Number of alerts in pending state (waiting for 'for' duration).",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"pending\"}) OR vector(0)",
+          "legendFormat": "pending",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 1, "color": "yellow" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background_gradient",
+        "graphMode": "none"
+      }
+    },
+    {
+      "title": "Alert Groups",
+      "description": "Number of configured alert rule groups.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "count(prometheus_rule_group_rules)",
+          "legendFormat": "rule groups",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "blue" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background_gradient",
+        "graphMode": "none"
+      }
+    },
+    {
+      "title": "Total Alert Rules",
+      "description": "Total number of individual alerting rules configured.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(prometheus_rule_group_rules)",
+          "legendFormat": "total rules",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "blue" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background_gradient",
+        "graphMode": "none"
+      }
+    },
+    {
+      "title": "Alert History",
+      "description": "Firing and pending alerts over time, grouped by alert name.",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "ALERTS{alertstate=~\"firing|pending\"}",
+          "legendFormat": "{{ alertname }} ({{ alertstate }})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 30, "stacking": { "mode": "none" } }
+        }
+      }
+    },
+    {
+      "title": "Rule Evaluation Duration",
+      "description": "Time spent evaluating alert rules per group.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(prometheus_rule_evaluation_duration_seconds_sum[5m])",
+          "legendFormat": "{{ rule_group }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 20 }
+        }
+      }
+    },
+    {
+      "title": "Rule Evaluation Failures",
+      "description": "Rate of failed rule evaluations.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(prometheus_rule_evaluation_failures_total[5m])",
+          "legendFormat": "{{ rule_group }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": { "mode": "fixed", "fixedColor": "red" },
+          "custom": { "fillOpacity": 30 }
+        }
+      }
+    },
+    {
+      "title": "Alert Detail",
+      "description": "Currently firing and pending alerts with full label detail.",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "ALERTS{alertstate=~\"firing|pending\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "Value": true },
+            "indexByName": {
+              "alertname": 0,
+              "alertstate": 1,
+              "severity": 2,
+              "instance": 3,
+              "job": 4
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["prefect", "alerts"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Prefect — Alerts",
+  "uid": "prefect-alerts"
+}

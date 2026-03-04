@@ -1,0 +1,39 @@
+# Prometheus agent config for VM workers.
+# Scrapes local exporters (node_exporter, cAdvisor) and remote_writes
+# to the central Prometheus on SPCS.
+#
+# The SPCS endpoint requires Snowflake PAT authentication, injected via
+# the auth-proxy sidecar (same as the Prefect worker).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+  external_labels:
+    # Set per-VM via environment variables (required in .env / compose)
+    worker_location: "${WORKER_LOCATION}"
+    worker_pool: "${WORKER_POOL}"
+
+scrape_configs:
+  # Host metrics (CPU, memory, disk, network)
+  - job_name: node-exporter
+    static_configs:
+      - targets:
+          - node-exporter:9100
+
+  # Docker container metrics (per-container CPU, memory, network, disk I/O)
+  - job_name: cadvisor
+    static_configs:
+      - targets:
+          - cadvisor:8080
+
+# Push all scraped metrics to the SPCS Prometheus remote_write receiver.
+# The auth-proxy-monitor sidecar handles PAT injection for SPCS auth.
+remote_write:
+  - url: "http://auth-proxy-monitor:4210/api/v1/write"
+    protobuf_message: "io.prometheus.write.v2.Request"
+    queue_config:
+      capacity: 5000
+      max_shards: 5
+      max_samples_per_send: 1000
+      batch_send_deadline: 5s

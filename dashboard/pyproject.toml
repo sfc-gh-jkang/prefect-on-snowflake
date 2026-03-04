@@ -1,0 +1,13 @@
+[project]
+name = "prefect-spcs-dashboard"
+version = "0.1.0"
+description = "SPCS Observability Dashboard for Prefect on Snowpark Container Services"
+requires-python = ">=3.11"
+dependencies = [
+    "snowflake-connector-python>=3.3.0",
+    "snowflake-snowpark-python>=1.17.0",
+    "streamlit[snowflake]>=1.40.0",
+    "plotly>=6.0",
+    "pandas>=2.0",
+    "requests>=2.31",
+]

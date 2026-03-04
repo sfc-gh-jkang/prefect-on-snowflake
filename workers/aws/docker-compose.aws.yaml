@@ -1,0 +1,68 @@
+# AWS Hybrid Worker — connects to Prefect server running on SPCS
+#
+# The auth-proxy sidecar injects Snowflake PAT auth into every request,
+# so the Prefect worker can talk to the SPCS endpoint without modification.
+#
+# Flow code delivery: git_clone pull step clones the repo before each flow run.
+# No bind mount needed — the worker pulls fresh code from git at runtime.
+# Works with any HTTPS git provider (GitHub, GitLab, BitBucket, Azure DevOps).
+#
+# Required env vars:
+#   SNOWFLAKE_PAT       — Role-restricted PAT for PREFECT_SVC service user
+#   SPCS_ENDPOINT       — SPCS public endpoint hostname (no https://)
+#   GIT_ACCESS_TOKEN    — Git access token for private repos (any provider)
+#   SNOWFLAKE_ACCOUNT   — Snowflake account identifier (for snowflake-etl flow)
+#   SNOWFLAKE_USER      — Snowflake username (PREFECT_SVC service user)
+#
+# Usage:
+#   export SNOWFLAKE_PAT="eyJraWQ..."
+#   export SPCS_ENDPOINT="xxxxx-orgname-acctname.snowflakecomputing.app"
+#   export GIT_ACCESS_TOKEN="ghp_xxxx"  # or glpat-xxxx for GitLab
+#   export SNOWFLAKE_ACCOUNT="ORGNAME-ACCTNAME"
+#   export SNOWFLAKE_USER="PREFECT_SVC"
+#   docker compose -f workers/aws/docker-compose.aws.yaml up -d
+
+services:
+  auth-proxy:
+    image: nginx:alpine
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf.template:ro
+    environment:
+      SNOWFLAKE_PAT: "${SNOWFLAKE_PAT:?Set SNOWFLAKE_PAT to your Snowflake programmatic access token}"
+      SPCS_ENDPOINT: "${SPCS_ENDPOINT:?Set SPCS_ENDPOINT to your SPCS server hostname}"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        envsubst '$$SNOWFLAKE_PAT $$SPCS_ENDPOINT' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'
+    ports:
+      - "4201:4200"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:4200/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    restart: on-failure
+
+  prefect-worker-aws:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      PREFECT_API_URL: "http://auth-proxy:4200/api"
+      GIT_REPO_URL: "${GIT_REPO_URL:-https://github.com/your-org/your-repo.git}"
+      GIT_BRANCH: "${GIT_BRANCH:-main}"
+      GIT_ACCESS_TOKEN: "${GIT_ACCESS_TOKEN:-}"
+      SNOWFLAKE_ACCOUNT: "${SNOWFLAKE_ACCOUNT:-}"
+      SNOWFLAKE_PAT: "${SNOWFLAKE_PAT:-}"
+      SNOWFLAKE_USER: "${SNOWFLAKE_USER:-}"
+      SNOWFLAKE_PASSWORD: "${SNOWFLAKE_PASSWORD:-}"
+      SNOWFLAKE_WAREHOUSE: "${SNOWFLAKE_WAREHOUSE:-COMPUTE_WH}"
+      SNOWFLAKE_DATABASE: "${SNOWFLAKE_DATABASE:-PREFECT_DB}"
+      SNOWFLAKE_SCHEMA: "${SNOWFLAKE_SCHEMA:-PREFECT_SCHEMA}"
+    command: prefect worker start --pool aws-pool --type process
+    depends_on:
+      auth-proxy:
+        condition: service_healthy
+    restart: on-failure

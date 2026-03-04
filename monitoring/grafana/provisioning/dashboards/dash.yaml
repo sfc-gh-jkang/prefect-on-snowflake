@@ -1,0 +1,17 @@
+# Grafana dashboard provisioning — auto-loads JSON dashboards on startup.
+# allowUiUpdates: false ensures the file is ALWAYS the source of truth.
+# Grafana will overwrite any DB-cached dashboard versions with the file content.
+apiVersion: 1
+
+providers:
+  - name: prefect-spcs
+    orgId: 1
+    folder: Prefect SPCS
+    type: file
+    disableDeletion: false
+    editable: false
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /opt/grafana/dashboards
+      foldersFromFilesStructure: false

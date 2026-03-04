@@ -1,0 +1,41 @@
+[project]
+name = "prefect-spcs"
+version = "0.1.0"
+description = "Prefect on Snowpark Container Services with hybrid workers"
+requires-python = ">=3.12"
+
+# No runtime dependencies — this is an orchestration project, not a library.
+# Flow-level deps live in images/prefect/pyproject.toml (SPCS worker image)
+# and workers/gcp/Dockerfile.worker (GCP worker image).
+dependencies = []
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "SIM"]
+ignore = ["E501"]  # line length handled by formatter
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0",
+    "pyyaml>=6.0",
+    "prefect>=3.0",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.0.0",
+    "pre-commit>=4.0",
+    "ruff>=0.8",
+    "pandas>=2.0",
+    "prometheus_client>=0.20",
+    "snowflake-connector-python>=3.6",
+    "requests>=2.31",
+]
+dashboard = [
+    "streamlit>=1.40.0",
+    "plotly>=6.0",
+    "snowflake-connector-python>=3.6",
+    "snowflake-snowpark-python>=1.17.0",
+    "pandas>=2.0",
+    "requests>=2.31",
+]

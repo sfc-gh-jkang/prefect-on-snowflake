@@ -1,0 +1,265 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Health Home", "url": "/grafana/d/health", "type": "link", "icon": "dashboard", "targetBlank": false },
+    { "title": "SPCS Overview", "url": "/grafana/d/prefect-spcs-overview", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Prefect App", "url": "/grafana/d/prefect-app", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "VM Workers", "url": "/grafana/d/prefect-vm-workers", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Alerts", "url": "/grafana/d/prefect-alerts", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "SPCS Logs", "url": "/grafana/d/prefect-spcs-logs", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Logs", "url": "/grafana/d/prefect-logs", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Postgres Detail", "url": "/grafana/d/prefect-postgres-detail", "type": "link", "icon": "external link", "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "title": "Keyspace Hit Ratio",
+      "description": "Percentage of key lookups that find the key in memory (hits vs misses).",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "redis_keyspace_hits_total{job=\"redis\"} / (redis_keyspace_hits_total{job=\"redis\"} + redis_keyspace_misses_total{job=\"redis\"}) * 100",
+          "legendFormat": "hit ratio",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 80, "color": "yellow" },
+              { "value": 95, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Memory Fragmentation Ratio",
+      "description": "Ratio of OS-allocated memory to Redis-used memory. >1.5 indicates fragmentation; <1 indicates swapping.",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "redis_mem_fragmentation_ratio{job=\"redis\"}",
+          "legendFormat": "frag ratio",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 1.0, "color": "green" },
+              { "value": 1.5, "color": "yellow" },
+              { "value": 2.0, "color": "red" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Blocked Clients",
+      "description": "Number of clients blocked waiting on BLPOP, BRPOP, or WAIT.",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "redis_blocked_clients{job=\"redis\"}",
+          "legendFormat": "blocked",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 1, "color": "yellow" },
+              { "value": 5, "color": "red" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Keys by Database",
+      "description": "Number of keys in each Redis database.",
+      "type": "bargauge",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "redis_db_keys{job=\"redis\"}",
+          "legendFormat": "db{{ db }}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "blue" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Evicted Keys",
+      "description": "Rate of keys evicted due to maxmemory policy.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(redis_evicted_keys_total{job=\"redis\"}[5m])",
+          "legendFormat": "evictions/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": { "mode": "fixed", "fixedColor": "red" },
+          "custom": { "fillOpacity": 30 }
+        }
+      }
+    },
+    {
+      "title": "Expired Keys",
+      "description": "Rate of keys expiring due to TTL.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(redis_expired_keys_total{job=\"redis\"}[5m])",
+          "legendFormat": "expirations/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": { "mode": "fixed", "fixedColor": "orange" },
+          "custom": { "fillOpacity": 30 }
+        }
+      }
+    },
+    {
+      "title": "Network I/O",
+      "description": "Redis input/output bytes per second.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(redis_net_input_bytes_total{job=\"redis\"}[5m])",
+          "legendFormat": "input bytes/sec",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(redis_net_output_bytes_total{job=\"redis\"}[5m])",
+          "legendFormat": "output bytes/sec",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "fillOpacity": 20 }
+        }
+      }
+    },
+    {
+      "title": "RDB Persistence",
+      "description": "Time since last RDB save and number of changes since last save.",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "time() - redis_rdb_last_save_timestamp_seconds{job=\"redis\"}",
+          "legendFormat": "seconds since save",
+          "refId": "A"
+        },
+        {
+          "expr": "redis_rdb_changes_since_last_save{job=\"redis\"}",
+          "legendFormat": "changes since save",
+          "refId": "B"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name",
+        "colorMode": "background_gradient"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 3600, "color": "yellow" },
+              { "value": 86400, "color": "red" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Keyspace Hits vs Misses",
+      "description": "Rate of keyspace hits and misses over time.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(redis_keyspace_hits_total{job=\"redis\"}[5m])",
+          "legendFormat": "hits/sec",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(redis_keyspace_misses_total{job=\"redis\"}[5m])",
+          "legendFormat": "misses/sec",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "fillOpacity": 20 }
+        }
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["prefect", "redis"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Prefect — Redis Detail",
+  "uid": "prefect-redis-detail"
+}

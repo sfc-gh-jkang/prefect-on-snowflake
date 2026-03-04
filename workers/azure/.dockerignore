@@ -1,0 +1,5 @@
+.env
+*.pem
+*.key
+README.md
+setup_*.sh

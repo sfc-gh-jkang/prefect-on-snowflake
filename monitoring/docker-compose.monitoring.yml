@@ -1,0 +1,98 @@
+# docker-compose.monitoring.yml — Monitoring sidecars for VM workers.
+#
+# Merge with the main worker compose file:
+#   docker compose -f docker-compose.gcp.yaml \
+#                  -f docker-compose.monitoring.yml up -d
+#
+# The vm-agents/ directory must be alongside this file. The setup scripts
+# copy both this file and vm-agents/ to the VM working directory.
+#
+# Required env vars (in addition to worker env vars):
+#   SPCS_MONITOR_ENDPOINT      — SPCS Prometheus public endpoint hostname
+#   SPCS_MONITOR_LOKI_ENDPOINT — SPCS Loki public endpoint hostname
+#   WORKER_LOCATION            — e.g. "gcp-us-central1" or "aws-us-east-1"
+#   WORKER_POOL                — e.g. "gcp-pool" or "aws-pool"
+#   DNS_RESOLVER               — DNS server (8.8.8.8 for GCP, 169.254.169.253 for AWS)
+
+services:
+  # ── Node Exporter — host metrics (CPU, memory, disk, network) ──────────
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    restart: unless-stopped
+
+  # ── cAdvisor — container-level metrics ─────────────────────────────────
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    devices:
+      - /dev/kmsg
+    restart: unless-stopped
+
+  # ── Auth Proxy for Monitoring — injects PAT for SPCS endpoints ─────────
+  auth-proxy-monitor:
+    image: nginx:alpine
+    volumes:
+      - ./vm-agents/nginx-monitor.conf:/etc/nginx/nginx.conf.template:ro
+    environment:
+      SNOWFLAKE_PAT: "${SNOWFLAKE_PAT}"
+      SPCS_MONITOR_ENDPOINT: "${SPCS_MONITOR_ENDPOINT:?Set SPCS_MONITOR_ENDPOINT to PF_MONITOR Prometheus endpoint}"
+      SPCS_MONITOR_LOKI_ENDPOINT: "${SPCS_MONITOR_LOKI_ENDPOINT:?Set SPCS_MONITOR_LOKI_ENDPOINT to PF_MONITOR Loki endpoint}"
+      DNS_RESOLVER: "${DNS_RESOLVER:-8.8.8.8}"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        envsubst '$$SNOWFLAKE_PAT $$SPCS_MONITOR_ENDPOINT $$SPCS_MONITOR_LOKI_ENDPOINT $$DNS_RESOLVER' \
+          < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf \
+          && nginx -g 'daemon off;'
+    restart: unless-stopped
+
+  # ── Prometheus Agent — scrapes local exporters, remote_writes to SPCS ──
+  prometheus-agent:
+    image: prom/prometheus:v3.4.1
+    command:
+      - --config.file=/etc/prometheus/prometheus-agent.yml
+      - --agent
+    volumes:
+      - ./vm-agents/prometheus-agent.yml:/etc/prometheus/prometheus-agent.yml:ro
+    environment:
+      WORKER_LOCATION: "${WORKER_LOCATION:-unknown}"
+      WORKER_POOL: "${WORKER_POOL:-unknown}"
+    depends_on:
+      - node-exporter
+      - cadvisor
+      - auth-proxy-monitor
+    restart: unless-stopped
+
+  # ── Promtail — ships container logs to SPCS Loki ──────────────────────
+  promtail:
+    image: grafana/promtail:3.5.0
+    command:
+      - -config.file=/etc/promtail/promtail-config.yaml
+      - -config.expand-env=true
+    volumes:
+      - ./vm-agents/promtail-config.yaml:/etc/promtail/promtail-config.yaml:ro
+      - /var/lib/docker/containers:/var/log/containers:ro
+      - /tmp/promtail-positions:/tmp
+    environment:
+      WORKER_LOCATION: "${WORKER_LOCATION:-unknown}"
+      WORKER_POOL: "${WORKER_POOL:-unknown}"
+    depends_on:
+      - auth-proxy-monitor
+    restart: unless-stopped

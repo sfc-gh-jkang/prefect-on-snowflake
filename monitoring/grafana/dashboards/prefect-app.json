@@ -1,0 +1,313 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Health Home", "url": "/grafana/d/health", "type": "link", "icon": "dashboard", "targetBlank": false },
+    { "title": "SPCS Overview", "url": "/grafana/d/prefect-spcs-overview", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "VM Workers", "url": "/grafana/d/prefect-vm-workers", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Alerts", "url": "/grafana/d/prefect-alerts", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "SPCS Logs", "url": "/grafana/d/prefect-spcs-logs", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Logs", "url": "/grafana/d/prefect-logs", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Redis Detail", "url": "/grafana/d/prefect-redis-detail", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Postgres Detail", "url": "/grafana/d/prefect-postgres-detail", "type": "link", "icon": "external link", "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "title": "Flow Runs by State",
+      "description": "Current count of flow runs in each state from the Prefect API.",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect_flow_runs{state=~\"$state\"}",
+          "legendFormat": "{{ state }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "FAILED" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "CRASHED" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "dark-red", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "RUNNING" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "COMPLETED" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "PENDING" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "SCHEDULED" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "CANCELLED" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "semi-dark-purple", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "CANCELLING" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "light-purple", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name",
+        "colorMode": "background_gradient",
+        "graphMode": "none",
+        "orientation": "auto",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "title": "Flow Runs Over Time",
+      "description": "Flow run counts by state over time.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect_flow_runs{state=~\"$state\"}",
+          "legendFormat": "{{ state }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 20, "stacking": { "mode": "normal" } }
+        }
+      }
+    },
+    {
+      "title": "Flow Run Success Rate",
+      "description": "Percentage of flow runs in COMPLETED state vs total active runs.",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(prefect_flow_runs{state=\"COMPLETED\"}) / clamp_min(sum(prefect_flow_runs{state=\"COMPLETED\"}) + sum(prefect_flow_runs{state=\"FAILED\"}) + sum(prefect_flow_runs{state=\"CRASHED\"}), 1) * 100",
+          "legendFormat": "success rate",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 70, "color": "yellow" },
+              { "value": 90, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Failed Flow Runs",
+      "description": "Count of FAILED and CRASHED flow runs over time.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect_flow_runs{state=\"FAILED\"}",
+          "legendFormat": "FAILED",
+          "refId": "A"
+        },
+        {
+          "expr": "prefect_flow_runs{state=\"CRASHED\"}",
+          "legendFormat": "CRASHED",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "red" },
+          "custom": { "fillOpacity": 30 }
+        }
+      }
+    },
+    {
+      "title": "Deployments",
+      "description": "Total deployment count and breakdown by schedule status.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect_deployments_total",
+          "legendFormat": "total",
+          "refId": "A"
+        },
+        {
+          "expr": "prefect_deployments{status=\"active\"}",
+          "legendFormat": "active",
+          "refId": "B"
+        },
+        {
+          "expr": "prefect_deployments{status=\"inactive\"}",
+          "legendFormat": "inactive",
+          "refId": "C"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name",
+        "colorMode": "background_gradient"
+      },
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "active" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "inactive" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Work Pools",
+      "description": "Work pool count by status.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect_work_pools_total",
+          "legendFormat": "total",
+          "refId": "A"
+        },
+        {
+          "expr": "prefect_work_pools{status=~\".+\"}",
+          "legendFormat": "{{ status }}",
+          "refId": "B"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "textMode": "value_and_name",
+        "colorMode": "background_gradient"
+      }
+    },
+    {
+      "title": "Workers Per Pool",
+      "description": "Number of active workers in each work pool.",
+      "type": "bargauge",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect_work_pool_workers",
+          "legendFormat": "{{ pool_name }} ({{ status }})",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 1, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Exporter Poll Duration",
+      "description": "How long each poll cycle of the prefect-exporter takes.",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect_exporter_poll_duration_seconds{job=\"prefect-app\"}",
+          "legendFormat": "poll duration",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 20 }
+        }
+      }
+    },
+    {
+      "title": "Exporter Errors",
+      "description": "Cumulative API polling errors from the prefect-exporter.",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect_exporter_poll_errors_total{job=\"prefect-app\"}",
+          "legendFormat": "errors",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "red" },
+          "custom": { "fillOpacity": 20 }
+        }
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["prefect", "application"],
+  "templating": {
+    "list": [
+      {
+        "name": "state",
+        "label": "State",
+        "type": "custom",
+        "query": "COMPLETED,FAILED,RUNNING,PENDING,SCHEDULED,CANCELLING,CANCELLED,CRASHED,PAUSED",
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Prefect — Application",
+  "uid": "prefect-app"
+}

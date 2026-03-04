@@ -1,0 +1,103 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: prefect
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-prefect}
+      POSTGRES_DB: prefect
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prefect"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "127.0.0.1:5432:5432"
+    restart: on-failure
+
+  redis:
+    image: redis:7
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: on-failure
+
+  migrate:
+    # Uses Prefect's major-version floating tag (3-python3.12 = latest 3.x).
+    # Pin to a specific version (e.g., 3.2.1-python3.12) for reproducibility.
+    image: prefecthq/prefect:3-python3.12
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: prefect server database upgrade -y
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: "postgresql+asyncpg://prefect:${POSTGRES_PASSWORD:-prefect}@postgres:5432/prefect"
+    restart: "no"
+
+  prefect-server:
+    image: prefecthq/prefect:3-python3.12
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: "postgresql+asyncpg://prefect:${POSTGRES_PASSWORD:-prefect}@postgres:5432/prefect"
+      PREFECT_API_DATABASE_MIGRATE_ON_START: "false"
+      PREFECT_SERVER_API_HOST: "0.0.0.0"
+      PREFECT_SERVER_UI_API_URL: "http://localhost:4200/api"
+      PREFECT_MESSAGING_BROKER: "prefect_redis.messaging"
+      PREFECT_MESSAGING_CACHE: "prefect_redis.messaging"
+      PREFECT_REDIS_MESSAGING_HOST: "redis"
+      PREFECT_REDIS_MESSAGING_PORT: "6379"
+      PREFECT_REDIS_MESSAGING_DB: "0"
+    command: prefect server start --no-services
+    ports:
+      - "4200:4200"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:4200/api/health', timeout=1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: on-failure
+
+  prefect-services:
+    image: prefecthq/prefect:3-python3.12
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: "postgresql+asyncpg://prefect:${POSTGRES_PASSWORD:-prefect}@postgres:5432/prefect"
+      PREFECT_API_DATABASE_MIGRATE_ON_START: "false"
+      PREFECT_MESSAGING_BROKER: "prefect_redis.messaging"
+      PREFECT_MESSAGING_CACHE: "prefect_redis.messaging"
+      PREFECT_REDIS_MESSAGING_HOST: "redis"
+      PREFECT_REDIS_MESSAGING_PORT: "6379"
+      PREFECT_REDIS_MESSAGING_DB: "0"
+    command: prefect server services start
+
+  prefect-worker:
+    build:
+      context: ./images/prefect
+      dockerfile: Dockerfile
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+    environment:
+      PREFECT_API_URL: "http://prefect-server:4200/api"
+    command: prefect worker start --pool local-pool --type process
+    volumes:
+      - ./flows:/opt/prefect/flows
+    restart: on-failure
+
+volumes:
+  postgres_data:
+  redis_data:

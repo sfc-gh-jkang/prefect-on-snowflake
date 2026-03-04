@@ -1,0 +1,309 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "Health Home", "url": "/grafana/d/health", "type": "link", "icon": "dashboard", "targetBlank": false },
+    { "title": "SPCS Overview", "url": "/grafana/d/prefect-spcs-overview", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Prefect App", "url": "/grafana/d/prefect-app", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Alerts", "url": "/grafana/d/prefect-alerts", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "SPCS Logs", "url": "/grafana/d/prefect-spcs-logs", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Logs", "url": "/grafana/d/prefect-logs", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Redis Detail", "url": "/grafana/d/prefect-redis-detail", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Postgres Detail", "url": "/grafana/d/prefect-postgres-detail", "type": "link", "icon": "external link", "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "title": "VM Worker Status",
+      "description": "Shows active VM workers detected via remote_write. Each worker_location with recent node_exporter data is considered alive.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 18, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "count by (worker_location) (up{job=\"node-exporter\", worker_location=~\"$worker_location\"})",
+          "legendFormat": "{{ worker_location }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "OFFLINE", "color": "red" }, "1": { "text": "ONLINE", "color": "green" } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 1, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "SPCS Worker",
+      "description": "Prefect worker running inside SPCS. Health is tracked by SPCS readinessProbe on /health. The worker has no Prometheus /metrics endpoint — REGISTERED means the scrape target exists and SPCS reports the container ready.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        {
+          "expr": "count(up{job=\"prefect-worker-spcs\"}) OR vector(0)",
+          "legendFormat": "spcs",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "NOT REGISTERED", "color": "red" }, "1": { "text": "REGISTERED", "color": "green" } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 1, "color": "green" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "VM CPU Usage (%)",
+      "description": "Overall CPU utilization per VM worker. 100% = all cores fully busy. Grouped by worker_location to distinguish different VMs.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        {
+          "expr": "100 - (avg by(worker_location) (rate(node_cpu_seconds_total{mode=\"idle\", worker_location=~\"$worker_location\"}[5m])) * 100)",
+          "legendFormat": "{{ worker_location }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "VM Memory Usage (%)",
+      "description": "Memory utilization per VM worker. Based on MemAvailable vs MemTotal from node_exporter.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        {
+          "expr": "(1 - (node_memory_MemAvailable_bytes{worker_location=~\"$worker_location\"} / node_memory_MemTotal_bytes{worker_location=~\"$worker_location\"})) * 100",
+          "legendFormat": "{{ worker_location }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "VM Disk Usage (%)",
+      "description": "Root filesystem usage per VM worker.",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "expr": "(1 - (node_filesystem_avail_bytes{mountpoint=\"/\", worker_location=~\"$worker_location\"} / node_filesystem_size_bytes{mountpoint=\"/\", worker_location=~\"$worker_location\"})) * 100",
+          "legendFormat": "{{ worker_location }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 70, "color": "yellow" },
+              { "value": 85, "color": "red" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "VM Network I/O",
+      "description": "Network receive/transmit bytes per second per VM worker. Excludes loopback, veth, and bridge interfaces.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        {
+          "expr": "sum by(worker_location) (rate(node_network_receive_bytes_total{device!~\"lo|veth.*|br.*|docker.*\", worker_location=~\"$worker_location\"}[5m]))",
+          "legendFormat": "{{ worker_location }} RX",
+          "refId": "A"
+        },
+        {
+          "expr": "-1 * sum by(worker_location) (rate(node_network_transmit_bytes_total{device!~\"lo|veth.*|br.*|docker.*\", worker_location=~\"$worker_location\"}[5m]))",
+          "legendFormat": "{{ worker_location }} TX",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "VM Memory Breakdown",
+      "description": "Absolute memory usage breakdown: total, available, buffers+cached per VM worker.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "expr": "node_memory_MemTotal_bytes{worker_location=~\"$worker_location\"}",
+          "legendFormat": "{{ worker_location }} Total",
+          "refId": "A"
+        },
+        {
+          "expr": "node_memory_MemTotal_bytes{worker_location=~\"$worker_location\"} - node_memory_MemAvailable_bytes{worker_location=~\"$worker_location\"}",
+          "legendFormat": "{{ worker_location }} Used",
+          "refId": "B"
+        },
+        {
+          "expr": "node_memory_MemAvailable_bytes{worker_location=~\"$worker_location\"}",
+          "legendFormat": "{{ worker_location }} Available",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "VM Disk I/O",
+      "description": "Disk read/write bytes per second per VM worker.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        {
+          "expr": "sum by(worker_location) (rate(node_disk_read_bytes_total{worker_location=~\"$worker_location\"}[5m]))",
+          "legendFormat": "{{ worker_location }} Read",
+          "refId": "A"
+        },
+        {
+          "expr": "-1 * sum by(worker_location) (rate(node_disk_written_bytes_total{worker_location=~\"$worker_location\"}[5m]))",
+          "legendFormat": "{{ worker_location }} Write",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Container CPU Usage (per container per VM)",
+      "description": "CPU usage per Docker container, grouped by VM worker_location and container name.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "targets": [
+        {
+          "expr": "sum by(worker_location, name) (rate(container_cpu_usage_seconds_total{name!=\"\", worker_location=~\"$worker_location\"}[5m])) * 100",
+          "legendFormat": "{{ worker_location }} / {{ name }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "Container Memory Usage (per container per VM)",
+      "description": "Memory usage per Docker container, grouped by VM worker_location and container name.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "targets": [
+        {
+          "expr": "container_memory_usage_bytes{name!=\"\", worker_location=~\"$worker_location\"}",
+          "legendFormat": "{{ worker_location }} / {{ name }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "VM Load Average (1m / 5m / 15m)",
+      "description": "System load average per VM worker. Values above CPU core count indicate saturation.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 36 },
+      "targets": [
+        {
+          "expr": "node_load1{worker_location=~\"$worker_location\"}",
+          "legendFormat": "{{ worker_location }} 1m",
+          "refId": "A"
+        },
+        {
+          "expr": "node_load5{worker_location=~\"$worker_location\"}",
+          "legendFormat": "{{ worker_location }} 5m",
+          "refId": "B"
+        },
+        {
+          "expr": "node_load15{worker_location=~\"$worker_location\"}",
+          "legendFormat": "{{ worker_location }} 15m",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 5 }
+        }
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["prefect", "workers", "vm"],
+  "templating": {
+    "list": [
+      {
+        "name": "worker_location",
+        "label": "Worker Location",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(up{job=\"node-exporter\"}, worker_location)",
+        "query": "label_values(up{job=\"node-exporter\"}, worker_location)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": { "text": "All", "value": "$__all" },
+        "multi": true,
+        "sort": 1
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Prefect — VM Workers",
+  "uid": "prefect-vm-workers"
+}

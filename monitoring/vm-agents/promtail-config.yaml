@@ -1,0 +1,34 @@
+# Promtail config for VM workers — ships Docker container logs to Loki on SPCS.
+# Loki push goes through the auth-proxy-monitor sidecar for PAT auth.
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  # Push to SPCS Loki via the auth-proxy-monitor sidecar
+  - url: "http://auth-proxy-monitor:4220/loki/api/v1/push"
+    external_labels:
+      worker_location: "${WORKER_LOCATION}"
+      worker_pool: "${WORKER_POOL}"
+
+scrape_configs:
+  # Discover and tail all Docker container logs
+  - job_name: docker
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: docker
+          __path__: /var/log/containers/*/*-json.log
+    pipeline_stages:
+      - docker: {}
+      - labels:
+          container_name:
+      - timestamp:
+          source: time
+          format: RFC3339Nano

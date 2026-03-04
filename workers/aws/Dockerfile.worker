@@ -1,0 +1,12 @@
+FROM prefecthq/prefect:3-python3.12
+
+# Hybrid worker image (shared by AWS and GCP).
+# Installs snowflake-connector-python so snowflake_flow.py works outside SPCS.
+# Flow code is delivered via git_clone pull step (clones repo before each run).
+# Works with any HTTPS git provider (GitHub, GitLab, BitBucket, etc.).
+# Git is included in the prefect base image.
+
+RUN pip install --no-cache-dir "snowflake-connector-python>=3.6,<4"
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD python -c "import prefect; print('ok')" || exit 1

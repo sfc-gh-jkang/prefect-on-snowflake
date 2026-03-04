@@ -1,0 +1,56 @@
+# Prometheus recording rules for SLO tracking and pre-aggregation.
+# These feed the Health home dashboard and SLO panels.
+
+groups:
+  - name: slo_recording
+    interval: 60s
+    rules:
+      # ── Server uptime SLOs ─────────────────────────────────────
+      - record: prefect:server_uptime:ratio_1h
+        expr: avg_over_time(up{job="prefect-server"}[1h])
+
+      - record: prefect:server_uptime:ratio_24h
+        expr: avg_over_time(up{job="prefect-server"}[24h])
+
+      - record: prefect:server_uptime:ratio_30d
+        expr: avg_over_time(up{job="prefect-server"}[30d])
+
+      # ── Redis uptime ───────────────────────────────────────────
+      - record: prefect:redis_uptime:ratio_1h
+        expr: avg_over_time(up{job="redis"}[1h])
+
+      # ── Postgres uptime ────────────────────────────────────────
+      - record: prefect:postgres_uptime:ratio_1h
+        expr: avg_over_time(up{job="postgres"}[1h])
+
+      # ── Loki uptime ───────────────────────────────────────────
+      - record: prefect:loki_uptime:ratio_1h
+        expr: avg_over_time(up{job="loki"}[1h])
+
+  - name: flow_recording
+    interval: 60s
+    rules:
+      # ── Flow success rate ──────────────────────────────────────
+      # Ratio of COMPLETED to (COMPLETED + FAILED + CRASHED) runs
+      - record: prefect:flow_success_rate:ratio
+        expr: |
+          clamp_min(
+            prefect_flow_runs{state="COMPLETED"}
+            / clamp_min(
+                prefect_flow_runs{state="COMPLETED"}
+                + prefect_flow_runs{state="FAILED"}
+                + prefect_flow_runs{state="CRASHED"},
+              1),
+          0)
+
+      # ── Total active flow runs ─────────────────────────────────
+      - record: prefect:flow_runs_active:total
+        expr: |
+          prefect_flow_runs{state="RUNNING"}
+          + prefect_flow_runs{state="PENDING"}
+
+      # ── Total failed flow runs ─────────────────────────────────
+      - record: prefect:flow_runs_failed:total
+        expr: |
+          prefect_flow_runs{state="FAILED"}
+          + prefect_flow_runs{state="CRASHED"}

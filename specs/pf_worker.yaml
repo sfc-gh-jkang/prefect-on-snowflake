@@ -1,0 +1,60 @@
+spec:
+  containers:
+    - name: pf-worker
+      # Using :latest for dev convenience. For production rollback support,
+      # pin to a git-SHA tag (e.g., prefect-worker:c8a115d) and update via
+      # ALTER SERVICE ... FROM @PREFECT_SPECS SPECIFICATION_FILE = 'pf_worker.yaml';
+      image: /prefect_db/prefect_schema/prefect_repository/prefect-worker:latest
+      command:
+        - prefect
+        - worker
+        - start
+        - --pool
+        - spcs-pool
+        - --type
+        - process
+        - --with-healthcheck
+      resources:
+        requests:
+          cpu: 0.5
+          memory: 1Gi
+        limits:
+          cpu: 2
+          memory: 4Gi
+      env:
+        PREFECT_API_URL: "http://pf-server:4200/api"
+        SNOWFLAKE_WAREHOUSE: "COMPUTE_WH"
+        GIT_REPO_URL: "https://github.com/your-org/your-repo.git"
+        GIT_BRANCH: "main"
+        PREFECT_WORKER_WEBSERVER_HOST: "0.0.0.0"
+        PREFECT_WORKER_WEBSERVER_PORT: "8080"
+      secrets:
+        - snowflakeSecret:
+            objectName: git_access_token
+          secretKeyRef: secret_string
+          envVarName: GIT_ACCESS_TOKEN
+      volumeMounts:
+        - name: flows
+          mountPath: /opt/prefect/flows
+      readinessProbe:
+        port: 8080
+        path: /health
+  endpoints:
+    - name: health
+      port: 8080
+  # Stage volume: mounts @PREFECT_FLOWS at /opt/prefect/flows as a backup for
+  # git_clone pull steps. Primary code delivery is git_clone (prefect.yaml);
+  # the stage mount provides a fallback when GIT_REPO_URL is not configured
+  # and keeps flow code available for the deploy job pattern.
+  volumes:
+    - name: flows
+      source: stage
+      stageConfig:
+        name: "@PREFECT_DB.PREFECT_SCHEMA.PREFECT_FLOWS"
+      uid: 0
+      gid: 0
+  platformMonitor:
+    metricConfig:
+      groups:
+        - system
+        - system_limits

@@ -1,0 +1,44 @@
+spec:
+  containers:
+    - name: pf-redis
+      image: /prefect_db/prefect_schema/prefect_repository/redis:7
+      args:
+        - redis-server
+        - --appendonly
+        - "yes"
+        - --appendfsync
+        - everysec
+      volumeMounts:
+        - name: redis-data
+          mountPath: /data
+
+    # ── Redis Exporter — Prometheus metrics for Redis ────────
+    - name: redis-exporter
+      image: /prefect_db/prefect_schema/prefect_repository/redis_exporter:v1.67.0
+      resources:
+        requests:
+          cpu: 0.1
+          memory: 64M
+        limits:
+          memory: 128M
+      env:
+        REDIS_ADDR: redis://localhost:6379
+      readinessProbe:
+        port: 9121
+        path: /metrics
+
+  endpoints:
+    - name: redis
+      port: 6379
+      protocol: TCP
+    - name: redis-metrics
+      port: 9121
+  volumes:
+    - name: redis-data
+      source: block
+      size: 10Gi
+  platformMonitor:
+    metricConfig:
+      groups:
+        - system
+        - system_limits

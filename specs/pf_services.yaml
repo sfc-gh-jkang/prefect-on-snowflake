@@ -1,0 +1,26 @@
+spec:
+  containers:
+    - name: pf-services
+      image: /prefect_db/prefect_schema/prefect_repository/prefect:3-python3.12
+      command:
+        - prefect
+        - server
+        - services
+        - start
+      env:
+        PREFECT_API_DATABASE_MIGRATE_ON_START: "false"
+        PREFECT_MESSAGING_BROKER: "prefect_redis.messaging"
+        PREFECT_MESSAGING_CACHE: "prefect_redis.messaging"
+        PREFECT_REDIS_MESSAGING_HOST: "pf-redis"
+        PREFECT_REDIS_MESSAGING_PORT: "6379"
+        PREFECT_REDIS_MESSAGING_DB: "0"
+      secrets:
+        - snowflakeSecret:
+            objectName: prefect_db_password
+          secretKeyRef: secret_string
+          envVarName: PREFECT_API_DATABASE_CONNECTION_URL
+  platformMonitor:
+    metricConfig:
+      groups:
+        - system
+        - system_limits

@@ -1,0 +1,130 @@
+# Prometheus configuration for Prefect SPCS monitoring.
+# Runs inside SPCS — scrapes all Prefect services via internal DNS.
+# VM workers push metrics here via remote_write.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+# Alerting rules (evaluated by Prometheus, routed by Grafana)
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+# Scrape targets — all SPCS services on internal DNS
+scrape_configs:
+  # -----------------------------------------------------------
+  # Prefect Server — full Prometheus metrics via prometheus_client
+  # Requires PREFECT_SERVER_METRICS_ENABLED=true in spec
+  # -----------------------------------------------------------
+  - job_name: prefect-server
+    metrics_path: /api/metrics
+    static_configs:
+      - targets:
+          - pf-server:4200
+        labels:
+          service: pf-server
+          environment: spcs
+
+  # -----------------------------------------------------------
+  # Prefect SPCS Worker — no Prometheus metrics endpoint.
+  # The worker exposes /health (JSON) but no /metrics endpoint.
+  # Scraping /metrics returns 404 and up=0. Scraping /health
+  # returns JSON which Prometheus cannot parse (also up=0).
+  #
+  # We keep the target so the "up" metric exists for alerting:
+  #   up{job="prefect-worker-spcs"} == 0  → expected (no metrics)
+  #   absent(up{job="prefect-worker-spcs"})  → worker unreachable
+  #
+  # Worker liveness is tracked by:
+  #   1. SPCS readinessProbe (port 8080 /health)
+  #   2. Prefect server metric: prefect_workers_active
+  #   3. SPCS platformMonitor (container restart count)
+  # -----------------------------------------------------------
+  - job_name: prefect-worker-spcs
+    metrics_path: /metrics
+    scrape_interval: 30s
+    scrape_timeout: 5s
+    static_configs:
+      - targets:
+          - pf-worker:8080
+        labels:
+          service: pf-worker
+          environment: spcs
+
+  # -----------------------------------------------------------
+  # Prometheus self-monitoring
+  # -----------------------------------------------------------
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090
+
+  # -----------------------------------------------------------
+  # Grafana — served under /grafana/ subpath
+  # -----------------------------------------------------------
+  - job_name: grafana
+    metrics_path: /grafana/metrics
+    static_configs:
+      - targets:
+          - localhost:3000
+
+  # -----------------------------------------------------------
+  # Loki — full Prometheus metrics
+  # Loki exposes standard /metrics endpoint with go runtime,
+  # ingestion, and query metrics. /ready returns plain text
+  # ("ready\n") which Prometheus cannot parse — always use /metrics.
+  # -----------------------------------------------------------
+  - job_name: loki
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - localhost:3100
+
+  # -----------------------------------------------------------
+  # Redis — metrics via redis-exporter sidecar in PF_REDIS service
+  # redis-exporter connects to localhost:6379 inside the service
+  # and exposes standard Prometheus metrics on port 9121.
+  # -----------------------------------------------------------
+  - job_name: redis
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - pf-redis:9121
+        labels:
+          service: pf-redis
+          environment: spcs
+
+  # -----------------------------------------------------------
+  # PostgreSQL — metrics via postgres-exporter sidecar in PF_MONITOR
+  # postgres-exporter connects to external Snowflake Managed Postgres
+  # via DATA_SOURCE_NAME secret and exposes metrics on port 9187.
+  # Runs in PF_MONITOR because that service already has the
+  # network rule for external access.
+  # -----------------------------------------------------------
+  - job_name: postgres
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - localhost:9187
+        labels:
+          service: pf-postgres
+          environment: spcs
+
+  # -----------------------------------------------------------
+  # Prefect Application — custom exporter sidecar in PF_MONITOR
+  # Polls the Prefect REST API and exposes flow run, deployment,
+  # and work pool metrics that the built-in /api/metrics lacks.
+  # -----------------------------------------------------------
+  - job_name: prefect-app
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - localhost:9394
+        labels:
+          service: prefect-exporter
+          environment: spcs
+
+# Remote write receiver — accepts metrics from VM Prometheus agents.
+# VM agents push to http://pf-monitor.<dns>:9090/api/v1/write
+# Enabled via --web.enable-remote-write-receiver flag.

@@ -1,0 +1,709 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    { "title": "SPCS Overview", "url": "/grafana/d/prefect-spcs-overview", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Prefect App", "url": "/grafana/d/prefect-app", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "VM Workers", "url": "/grafana/d/prefect-vm-workers", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Alerts", "url": "/grafana/d/prefect-alerts", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "SPCS Logs", "url": "/grafana/d/prefect-spcs-logs", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Logs", "url": "/grafana/d/prefect-logs", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Redis Detail", "url": "/grafana/d/prefect-redis-detail", "type": "link", "icon": "external link", "targetBlank": false },
+    { "title": "Postgres Detail", "url": "/grafana/d/prefect-postgres-detail", "type": "link", "icon": "external link", "targetBlank": false }
+  ],
+  "panels": [
+    {
+      "title": "",
+      "type": "text",
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "# Prefect SPCS Health\nSingle pane of glass — click any section header or panel title to drill down."
+      }
+    },
+
+    {
+      "title": "Row: Service Status",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 2 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "Services UP",
+      "description": "Number of services reporting UP via Prometheus scrape targets.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "count(up{job=~\"prefect-server|prometheus|grafana|loki|redis|postgres|prefect-app\"} == 1) OR vector(0)",
+          "legendFormat": "UP",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 5, "color": "yellow" },
+              { "value": 7, "color": "green" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background_gradient",
+        "graphMode": "none"
+      },
+      "links": [
+        { "title": "SPCS Overview", "url": "/grafana/d/prefect-spcs-overview", "targetBlank": false }
+      ]
+    },
+    {
+      "title": "Server Uptime (1h)",
+      "description": "Prefect server uptime ratio over the last hour (recording rule).",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect:server_uptime:ratio_1h OR avg_over_time(up{job=\"prefect-server\"}[1h])",
+          "legendFormat": "1h uptime",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 0.95, "color": "yellow" },
+              { "value": 0.99, "color": "green" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background_gradient",
+        "graphMode": "none"
+      }
+    },
+    {
+      "title": "Server Uptime (24h)",
+      "description": "Prefect server uptime ratio over the last 24 hours.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect:server_uptime:ratio_24h OR avg_over_time(up{job=\"prefect-server\"}[24h])",
+          "legendFormat": "24h uptime",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 0.95, "color": "yellow" },
+              { "value": 0.99, "color": "green" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background_gradient",
+        "graphMode": "none"
+      }
+    },
+    {
+      "title": "Firing Alerts",
+      "description": "Number of currently firing Prometheus alerts.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "count(ALERTS{alertstate=\"firing\"}) OR vector(0)",
+          "legendFormat": "firing",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 1, "color": "red" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background_gradient",
+        "graphMode": "none"
+      },
+      "links": [
+        { "title": "Alerts Dashboard", "url": "/grafana/d/prefect-alerts", "targetBlank": false }
+      ]
+    },
+    {
+      "title": "Redis Uptime (1h)",
+      "description": "Redis uptime ratio over the last hour.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect:redis_uptime:ratio_1h OR avg_over_time(up{job=\"redis\"}[1h])",
+          "legendFormat": "redis",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 0.95, "color": "yellow" },
+              { "value": 0.99, "color": "green" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background_gradient",
+        "graphMode": "none"
+      },
+      "links": [
+        { "title": "Redis Detail", "url": "/grafana/d/prefect-redis-detail", "targetBlank": false }
+      ]
+    },
+    {
+      "title": "Postgres Uptime (1h)",
+      "description": "Postgres exporter uptime ratio over the last hour.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 3 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect:postgres_uptime:ratio_1h OR avg_over_time(up{job=\"postgres\"}[1h])",
+          "legendFormat": "postgres",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 0.95, "color": "yellow" },
+              { "value": 0.99, "color": "green" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background_gradient",
+        "graphMode": "none"
+      },
+      "links": [
+        { "title": "Postgres Detail", "url": "/grafana/d/prefect-postgres-detail", "targetBlank": false }
+      ]
+    },
+
+    {
+      "title": "Row: Flow Health",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "Flow Success Rate",
+      "description": "Ratio of COMPLETED runs to total terminal runs (recording rule).",
+      "type": "gauge",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect:flow_success_rate:ratio OR clamp_min(prefect_flow_runs{state=\"COMPLETED\"} / clamp_min(prefect_flow_runs{state=\"COMPLETED\"} + prefect_flow_runs{state=\"FAILED\"} + prefect_flow_runs{state=\"CRASHED\"}, 1), 0)",
+          "legendFormat": "success rate",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "red" },
+              { "value": 0.8, "color": "yellow" },
+              { "value": 0.95, "color": "green" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "links": [
+        { "title": "Prefect App", "url": "/grafana/d/prefect-app", "targetBlank": false }
+      ]
+    },
+    {
+      "title": "Active Flow Runs",
+      "description": "RUNNING + PENDING flow runs.",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 4, "x": 6, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect:flow_runs_active:total OR (prefect_flow_runs{state=\"RUNNING\"} + prefect_flow_runs{state=\"PENDING\"})",
+          "legendFormat": "active",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "blue" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background_gradient",
+        "graphMode": "none"
+      },
+      "links": [
+        { "title": "Prefect App", "url": "/grafana/d/prefect-app", "targetBlank": false }
+      ]
+    },
+    {
+      "title": "Failed Runs",
+      "description": "FAILED + CRASHED flow runs.",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 4, "x": 10, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect:flow_runs_failed:total OR (prefect_flow_runs{state=\"FAILED\"} + prefect_flow_runs{state=\"CRASHED\"})",
+          "legendFormat": "failed",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 1, "color": "orange" },
+              { "value": 5, "color": "red" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background_gradient",
+        "graphMode": "none"
+      },
+      "links": [
+        { "title": "Prefect App", "url": "/grafana/d/prefect-app", "targetBlank": false }
+      ]
+    },
+    {
+      "title": "Duration P50 (1h)",
+      "description": "Median flow run duration for COMPLETED runs in the last hour.",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 5, "x": 14, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect_flow_run_duration_p50_seconds",
+          "legendFormat": "p50",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 300, "color": "yellow" },
+              { "value": 900, "color": "red" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background_gradient",
+        "graphMode": "none"
+      }
+    },
+    {
+      "title": "Duration P95 (1h)",
+      "description": "95th percentile flow run duration for COMPLETED runs in the last hour.",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 5, "x": 19, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect_flow_run_duration_p95_seconds",
+          "legendFormat": "p95",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 600, "color": "yellow" },
+              { "value": 1800, "color": "red" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background_gradient",
+        "graphMode": "none"
+      }
+    },
+
+    {
+      "title": "Row: Infrastructure",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "CPU Usage by Container",
+      "description": "CPU usage rate across all containers (1m average).",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(process_cpu_seconds_total[1m])",
+          "legendFormat": "{{ job }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": { "fillOpacity": 10, "lineWidth": 1.5 }
+        }
+      },
+      "links": [
+        { "title": "SPCS Overview", "url": "/grafana/d/prefect-spcs-overview", "targetBlank": false }
+      ]
+    },
+    {
+      "title": "Memory Usage by Container",
+      "description": "Resident memory set size across all containers.",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "process_resident_memory_bytes",
+          "legendFormat": "{{ job }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "fillOpacity": 10, "lineWidth": 1.5 }
+        }
+      },
+      "links": [
+        { "title": "SPCS Overview", "url": "/grafana/d/prefect-spcs-overview", "targetBlank": false }
+      ]
+    },
+    {
+      "title": "Deployments Total",
+      "description": "Total registered Prefect deployments.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 21 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect_deployments_total",
+          "legendFormat": "deployments",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "blue" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background_gradient",
+        "graphMode": "none"
+      },
+      "links": [
+        { "title": "Prefect App", "url": "/grafana/d/prefect-app", "targetBlank": false }
+      ]
+    },
+    {
+      "title": "Work Pools",
+      "description": "Total registered Prefect work pools.",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 21 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect_work_pools_total",
+          "legendFormat": "work pools",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "blue" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background_gradient",
+        "graphMode": "none"
+      }
+    },
+    {
+      "title": "Workers per Pool",
+      "description": "Active worker count per work pool.",
+      "type": "bargauge",
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 21 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect_work_pool_workers",
+          "legendFormat": "{{ pool_name }} ({{ status }})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      },
+      "links": [
+        { "title": "VM Workers", "url": "/grafana/d/prefect-vm-workers", "targetBlank": false }
+      ]
+    },
+    {
+      "title": "Poll Duration",
+      "description": "Time taken by the prefect-exporter to poll all metrics from the Prefect API.",
+      "type": "timeseries",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 21 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "prefect_exporter_poll_duration_seconds",
+          "legendFormat": "poll duration",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 10, "lineWidth": 1.5 }
+        }
+      }
+    },
+
+    {
+      "title": "Row: Logs & Alerts",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "Recent SPCS Error Logs",
+      "description": "Latest ERROR-severity entries from SPCS event logs via Loki.",
+      "type": "logs",
+      "gridPos": { "h": 7, "w": 16, "x": 0, "y": 26 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{job=\"spcs-logs\", severity=\"ERROR\"}",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending"
+      },
+      "links": [
+        { "title": "SPCS Logs", "url": "/grafana/d/prefect-spcs-logs", "targetBlank": false }
+      ]
+    },
+    {
+      "title": "Alert Rules Summary",
+      "description": "Prometheus alert rules with current state.",
+      "type": "table",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 26 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "ALERTS",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {}
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true },
+            "renameByName": { "alertname": "Alert", "alertstate": "State", "severity": "Severity" }
+          }
+        }
+      ],
+      "links": [
+        { "title": "Alerts Dashboard", "url": "/grafana/d/prefect-alerts", "targetBlank": false }
+      ]
+    },
+
+    {
+      "title": "Row: Workers",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 33 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "GCP Worker Flow Runs (5m rate)",
+      "description": "Rate of flow run completions on GCP hybrid workers.",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 34 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(prefect_flow_runs{state=~\"COMPLETED|FAILED|CRASHED\"}[5m])",
+          "legendFormat": "{{ state }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": { "fillOpacity": 10, "lineWidth": 1.5 }
+        }
+      },
+      "links": [
+        { "title": "VM Workers", "url": "/grafana/d/prefect-vm-workers", "targetBlank": false }
+      ]
+    },
+    {
+      "title": "Worker Logs Stream",
+      "description": "Recent log lines from Prefect workers.",
+      "type": "logs",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 34 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "expr": "{job=\"spcs-logs\", container=~\".*worker.*\"}",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "wrapLogMessage": true,
+        "enableLogDetails": true,
+        "sortOrder": "Descending"
+      },
+      "links": [
+        { "title": "Logs Dashboard", "url": "/grafana/d/prefect-logs", "targetBlank": false }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["prefect", "spcs", "health"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Prefect Health",
+  "uid": "health",
+  "version": 1
+}

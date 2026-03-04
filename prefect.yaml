@@ -1,0 +1,688 @@
+# =============================================================================
+# prefect.yaml — Declarative deployment configuration
+#
+# Registers all flow deployments with:  prefect deploy --all
+#
+# Pull strategy: git_clone from the project repo. Workers clone at runtime
+# and set the working directory to flows/ so entrypoints and imports resolve correctly.
+#
+# Environment variables (must be set on the worker or in the shell):
+#   GIT_REPO_URL       — HTTPS URL to your git repo
+#   GIT_BRANCH         — Branch to clone (default: main)
+#   GIT_ACCESS_TOKEN   — Access token for private repos
+# =============================================================================
+
+pull:
+  - prefect.deployments.steps.git_clone:
+      id: clone
+      repository: "{{ $GIT_REPO_URL }}"
+      branch: "{{ $GIT_BRANCH }}"
+      access_token: "{{ $GIT_ACCESS_TOKEN }}"
+  - prefect.deployments.steps.set_working_directory:
+      directory: "{{ clone.directory }}/flows"
+
+deployments:
+  # ===========================================================================
+  # example-flow — Hello world flow to verify worker connectivity
+  # ===========================================================================
+  - name: example-flow-local
+    entrypoint: example_flow.py:example_flow
+    work_pool:
+      name: spcs-pool
+    tags: [spcs, example]
+    parameters:
+      name: "Prefect-SPCS"
+    schedules:
+      - interval: 3600
+    enforce_parameter_schema: true
+    description: "Hello world flow to verify worker connectivity"
+
+  - name: example-flow-gcp
+    entrypoint: example_flow.py:example_flow
+    work_pool:
+      name: gcp-pool
+    tags: [gcp, example]
+    parameters:
+      name: "Prefect-SPCS"
+    schedules:
+      - interval: 3600
+    enforce_parameter_schema: true
+    description: "Hello world flow to verify worker connectivity"
+
+  - name: example-flow-aws
+    entrypoint: example_flow.py:example_flow
+    work_pool:
+      name: aws-pool
+    tags: [aws, example]
+    parameters:
+      name: "Prefect-SPCS"
+    schedules:
+      - interval: 3600
+    enforce_parameter_schema: true
+    description: "Hello world flow to verify worker connectivity"
+
+  - name: example-flow-azure
+    entrypoint: example_flow.py:example_flow
+    work_pool:
+      name: azure-pool
+    tags: [azure, example]
+    parameters:
+      name: "Prefect-SPCS"
+    schedules:
+      - interval: 3600
+    enforce_parameter_schema: true
+    description: "Hello world flow to verify worker connectivity"
+
+  # ===========================================================================
+  # snowflake-etl — Run a Snowflake query from the Prefect worker
+  # ===========================================================================
+  - name: snowflake-etl-local
+    entrypoint: snowflake_flow.py:snowflake_etl
+    work_pool:
+      name: spcs-pool
+    tags: [spcs, snowflake]
+    schedules:
+      - cron: "0 6 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Run a Snowflake query from the Prefect worker"
+
+  - name: snowflake-etl-gcp
+    entrypoint: snowflake_flow.py:snowflake_etl
+    work_pool:
+      name: gcp-pool
+    tags: [gcp, snowflake]
+    schedules:
+      - cron: "0 6 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Run a Snowflake query from the Prefect worker"
+
+  - name: snowflake-etl-aws
+    entrypoint: snowflake_flow.py:snowflake_etl
+    work_pool:
+      name: aws-pool
+    tags: [aws, snowflake]
+    schedules:
+      - cron: "0 6 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Run a Snowflake query from the Prefect worker"
+
+  - name: snowflake-etl-azure
+    entrypoint: snowflake_flow.py:snowflake_etl
+    work_pool:
+      name: azure-pool
+    tags: [azure, snowflake]
+    schedules:
+      - cron: "0 6 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Run a Snowflake query from the Prefect worker"
+
+  # ===========================================================================
+  # external-api — External API call demonstrating EAI egress
+  # ===========================================================================
+  - name: external-api-local
+    entrypoint: external_api_flow.py:external_api_flow
+    work_pool:
+      name: spcs-pool
+    tags: [spcs, eai]
+    enforce_parameter_schema: true
+    description: "External API call demonstrating EAI egress"
+
+  - name: external-api-gcp
+    entrypoint: external_api_flow.py:external_api_flow
+    work_pool:
+      name: gcp-pool
+    tags: [gcp, eai]
+    enforce_parameter_schema: true
+    description: "External API call demonstrating EAI egress"
+
+  - name: external-api-aws
+    entrypoint: external_api_flow.py:external_api_flow
+    work_pool:
+      name: aws-pool
+    tags: [aws, eai]
+    enforce_parameter_schema: true
+    description: "External API call demonstrating EAI egress"
+
+  - name: external-api-azure
+    entrypoint: external_api_flow.py:external_api_flow
+    work_pool:
+      name: azure-pool
+    tags: [azure, eai]
+    enforce_parameter_schema: true
+    description: "External API call demonstrating EAI egress"
+
+  # ===========================================================================
+  # e2e-test — End-to-end pipeline test
+  # ===========================================================================
+  - name: e2e-test-local
+    entrypoint: e2e_test_flow.py:e2e_pipeline_test
+    work_pool:
+      name: spcs-pool
+    tags: [spcs, e2e]
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
+    enforce_parameter_schema: true
+    description: "End-to-end pipeline: sample data -> table -> dynamic table -> verify -> cleanup"
+
+  - name: e2e-test-gcp
+    entrypoint: e2e_test_flow.py:e2e_pipeline_test
+    work_pool:
+      name: gcp-pool
+    tags: [gcp, e2e]
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
+    enforce_parameter_schema: true
+    description: "End-to-end pipeline: sample data -> table -> dynamic table -> verify -> cleanup"
+
+  - name: e2e-test-aws
+    entrypoint: e2e_test_flow.py:e2e_pipeline_test
+    work_pool:
+      name: aws-pool
+    tags: [aws, e2e]
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
+    enforce_parameter_schema: true
+    description: "End-to-end pipeline: sample data -> table -> dynamic table -> verify -> cleanup"
+
+  - name: e2e-test-azure
+    entrypoint: e2e_test_flow.py:e2e_pipeline_test
+    work_pool:
+      name: azure-pool
+    tags: [azure, e2e]
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
+    enforce_parameter_schema: true
+    description: "End-to-end pipeline: sample data -> table -> dynamic table -> verify -> cleanup"
+
+  # ===========================================================================
+  # analytics-revenue — Multi-file subfolder flow demonstrating sibling imports
+  # ===========================================================================
+  - name: analytics-revenue-local
+    entrypoint: analytics/revenue_flow.py:analytics_revenue
+    work_pool:
+      name: spcs-pool
+    tags: [spcs, analytics]
+    enforce_parameter_schema: true
+    description: "Multi-file subfolder flow demonstrating sibling imports"
+
+  - name: analytics-revenue-gcp
+    entrypoint: analytics/revenue_flow.py:analytics_revenue
+    work_pool:
+      name: gcp-pool
+    tags: [gcp, analytics]
+    enforce_parameter_schema: true
+    description: "Multi-file subfolder flow demonstrating sibling imports"
+
+  - name: analytics-revenue-aws
+    entrypoint: analytics/revenue_flow.py:analytics_revenue
+    work_pool:
+      name: aws-pool
+    tags: [aws, analytics]
+    enforce_parameter_schema: true
+    description: "Multi-file subfolder flow demonstrating sibling imports"
+
+  - name: analytics-revenue-azure
+    entrypoint: analytics/revenue_flow.py:analytics_revenue
+    work_pool:
+      name: azure-pool
+    tags: [azure, analytics]
+    enforce_parameter_schema: true
+    description: "Multi-file subfolder flow demonstrating sibling imports"
+
+  # ===========================================================================
+  # quarterly-report — Deep nested import stress test
+  # ===========================================================================
+  - name: quarterly-report-local
+    entrypoint: analytics/reports/quarterly_flow.py:quarterly_report
+    work_pool:
+      name: spcs-pool
+    tags: [spcs, analytics, nested]
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
+    schedules:
+      - cron: "0 0 1 1,4,7,10 *"
+        timezone: "US/Pacific"
+    enforce_parameter_schema: true
+    description: "Deep nested import stress test: sibling, package, and root imports"
+
+  - name: quarterly-report-gcp
+    entrypoint: analytics/reports/quarterly_flow.py:quarterly_report
+    work_pool:
+      name: gcp-pool
+    tags: [gcp, analytics, nested]
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
+    schedules:
+      - cron: "0 0 1 1,4,7,10 *"
+        timezone: "US/Pacific"
+    enforce_parameter_schema: true
+    description: "Deep nested import stress test: sibling, package, and root imports"
+
+  - name: quarterly-report-aws
+    entrypoint: analytics/reports/quarterly_flow.py:quarterly_report
+    work_pool:
+      name: aws-pool
+    tags: [aws, analytics, nested]
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
+    schedules:
+      - cron: "0 0 1 1,4,7,10 *"
+        timezone: "US/Pacific"
+    enforce_parameter_schema: true
+    description: "Deep nested import stress test: sibling, package, and root imports"
+
+  - name: quarterly-report-azure
+    entrypoint: analytics/reports/quarterly_flow.py:quarterly_report
+    work_pool:
+      name: azure-pool
+    tags: [azure, analytics, nested]
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
+    schedules:
+      - cron: "0 0 1 1,4,7,10 *"
+        timezone: "US/Pacific"
+    enforce_parameter_schema: true
+    description: "Deep nested import stress test: sibling, package, and root imports"
+
+  # ===========================================================================
+  # data-quality — Daily data quality checks on Snowflake tables
+  # ===========================================================================
+  - name: data-quality-local
+    entrypoint: data_quality_flow.py:data_quality_check
+    work_pool:
+      name: spcs-pool
+    tags: [spcs, data-quality, monitoring]
+    schedules:
+      - cron: "0 7 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Daily data quality checks on Snowflake tables"
+
+  - name: data-quality-gcp
+    entrypoint: data_quality_flow.py:data_quality_check
+    work_pool:
+      name: gcp-pool
+    tags: [gcp, data-quality, monitoring]
+    schedules:
+      - cron: "0 7 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Daily data quality checks on Snowflake tables"
+
+  - name: data-quality-aws
+    entrypoint: data_quality_flow.py:data_quality_check
+    work_pool:
+      name: aws-pool
+    tags: [aws, data-quality, monitoring]
+    schedules:
+      - cron: "0 7 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Daily data quality checks on Snowflake tables"
+
+  - name: data-quality-azure
+    entrypoint: data_quality_flow.py:data_quality_check
+    work_pool:
+      name: azure-pool
+    tags: [azure, data-quality, monitoring]
+    schedules:
+      - cron: "0 7 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Daily data quality checks on Snowflake tables"
+
+  # ===========================================================================
+  # stage-cleanup — Daily cleanup of stale files from Snowflake stages
+  # ===========================================================================
+  - name: stage-cleanup-local
+    entrypoint: stage_cleanup_flow.py:stage_cleanup
+    work_pool:
+      name: spcs-pool
+    tags: [spcs, maintenance, storage]
+    parameters:
+      retention_days: 30
+    schedules:
+      - cron: "0 3 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Daily cleanup of stale files from Snowflake stages"
+
+  - name: stage-cleanup-gcp
+    entrypoint: stage_cleanup_flow.py:stage_cleanup
+    work_pool:
+      name: gcp-pool
+    tags: [gcp, maintenance, storage]
+    parameters:
+      retention_days: 30
+    schedules:
+      - cron: "0 3 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Daily cleanup of stale files from Snowflake stages"
+
+  - name: stage-cleanup-aws
+    entrypoint: stage_cleanup_flow.py:stage_cleanup
+    work_pool:
+      name: aws-pool
+    tags: [aws, maintenance, storage]
+    parameters:
+      retention_days: 30
+    schedules:
+      - cron: "0 3 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Daily cleanup of stale files from Snowflake stages"
+
+  - name: stage-cleanup-azure
+    entrypoint: stage_cleanup_flow.py:stage_cleanup
+    work_pool:
+      name: azure-pool
+    tags: [azure, maintenance, storage]
+    parameters:
+      retention_days: 30
+    schedules:
+      - cron: "0 3 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Daily cleanup of stale files from Snowflake stages"
+
+  # ===========================================================================
+  # health-check — Infrastructure health check every 15 minutes
+  # ===========================================================================
+  - name: health-check-local
+    entrypoint: health_check_flow.py:health_check
+    work_pool:
+      name: spcs-pool
+    tags: [spcs, monitoring, infra]
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
+    schedules:
+      - interval: 900
+    enforce_parameter_schema: true
+    description: "Infrastructure health check: Snowflake, SPCS services, compute pools"
+
+  # ===========================================================================
+  # aws-pool-backup deployments — Backup AWS worker
+  # ===========================================================================
+  - name: example-flow-aws-backup
+    entrypoint: example_flow.py:example_flow
+    work_pool:
+      name: aws-pool-backup
+    tags: [aws-backup, example]
+    parameters:
+      name: "Prefect-SPCS"
+    schedules:
+      - interval: 3600
+    enforce_parameter_schema: true
+    description: "Hello world flow to verify worker connectivity"
+
+  - name: snowflake-etl-aws-backup
+    entrypoint: snowflake_flow.py:snowflake_etl
+    work_pool:
+      name: aws-pool-backup
+    tags: [aws-backup, snowflake]
+    schedules:
+      - cron: "0 6 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Run a Snowflake query from the Prefect worker"
+
+  - name: external-api-aws-backup
+    entrypoint: external_api_flow.py:external_api_flow
+    work_pool:
+      name: aws-pool-backup
+    tags: [aws-backup, eai]
+    enforce_parameter_schema: true
+    description: "External API call demonstrating EAI egress"
+
+  - name: e2e-test-aws-backup
+    entrypoint: e2e_test_flow.py:e2e_pipeline_test
+    work_pool:
+      name: aws-pool-backup
+    tags: [aws-backup, e2e]
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
+    enforce_parameter_schema: true
+    description: "End-to-end pipeline: sample data -> table -> dynamic table -> verify -> cleanup"
+
+  - name: analytics-revenue-aws-backup
+    entrypoint: analytics/revenue_flow.py:analytics_revenue
+    work_pool:
+      name: aws-pool-backup
+    tags: [aws-backup, analytics]
+    enforce_parameter_schema: true
+    description: "Multi-file subfolder flow demonstrating sibling imports"
+
+  - name: quarterly-report-aws-backup
+    entrypoint: analytics/reports/quarterly_flow.py:quarterly_report
+    work_pool:
+      name: aws-pool-backup
+    tags: [aws-backup, analytics, nested]
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
+    schedules:
+      - cron: "0 0 1 1,4,7,10 *"
+        timezone: "US/Pacific"
+    enforce_parameter_schema: true
+    description: "Deep nested import stress test: sibling, package, and root imports"
+
+  - name: data-quality-aws-backup
+    entrypoint: data_quality_flow.py:data_quality_check
+    work_pool:
+      name: aws-pool-backup
+    tags: [aws-backup, data-quality, monitoring]
+    schedules:
+      - cron: "0 7 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Daily data quality checks on Snowflake tables"
+
+  - name: stage-cleanup-aws-backup
+    entrypoint: stage_cleanup_flow.py:stage_cleanup
+    work_pool:
+      name: aws-pool-backup
+    tags: [aws-backup, maintenance, storage]
+    parameters:
+      retention_days: 30
+    schedules:
+      - cron: "0 3 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Daily cleanup of stale files from Snowflake stages"
+
+  # ===========================================================================
+  # azure-pool-backup deployments — Backup Azure worker
+  # ===========================================================================
+  - name: example-flow-azure-backup
+    entrypoint: example_flow.py:example_flow
+    work_pool:
+      name: azure-pool-backup
+    tags: [azure-backup, example]
+    parameters:
+      name: "Prefect-SPCS"
+    schedules:
+      - interval: 3600
+    enforce_parameter_schema: true
+    description: "Hello world flow to verify worker connectivity"
+
+  - name: snowflake-etl-azure-backup
+    entrypoint: snowflake_flow.py:snowflake_etl
+    work_pool:
+      name: azure-pool-backup
+    tags: [azure-backup, snowflake]
+    schedules:
+      - cron: "0 6 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Run a Snowflake query from the Prefect worker"
+
+  - name: external-api-azure-backup
+    entrypoint: external_api_flow.py:external_api_flow
+    work_pool:
+      name: azure-pool-backup
+    tags: [azure-backup, eai]
+    enforce_parameter_schema: true
+    description: "External API call demonstrating EAI egress"
+
+  - name: e2e-test-azure-backup
+    entrypoint: e2e_test_flow.py:e2e_pipeline_test
+    work_pool:
+      name: azure-pool-backup
+    tags: [azure-backup, e2e]
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
+    enforce_parameter_schema: true
+    description: "End-to-end pipeline: sample data -> table -> dynamic table -> verify -> cleanup"
+
+  - name: analytics-revenue-azure-backup
+    entrypoint: analytics/revenue_flow.py:analytics_revenue
+    work_pool:
+      name: azure-pool-backup
+    tags: [azure-backup, analytics]
+    enforce_parameter_schema: true
+    description: "Multi-file subfolder flow demonstrating sibling imports"
+
+  - name: quarterly-report-azure-backup
+    entrypoint: analytics/reports/quarterly_flow.py:quarterly_report
+    work_pool:
+      name: azure-pool-backup
+    tags: [azure-backup, analytics, nested]
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
+    schedules:
+      - cron: "0 0 1 1,4,7,10 *"
+        timezone: "US/Pacific"
+    enforce_parameter_schema: true
+    description: "Deep nested import stress test: sibling, package, and root imports"
+
+  - name: data-quality-azure-backup
+    entrypoint: data_quality_flow.py:data_quality_check
+    work_pool:
+      name: azure-pool-backup
+    tags: [azure-backup, data-quality, monitoring]
+    schedules:
+      - cron: "0 7 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Daily data quality checks on Snowflake tables"
+
+  - name: stage-cleanup-azure-backup
+    entrypoint: stage_cleanup_flow.py:stage_cleanup
+    work_pool:
+      name: azure-pool-backup
+    tags: [azure-backup, maintenance, storage]
+    parameters:
+      retention_days: 30
+    schedules:
+      - cron: "0 3 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Daily cleanup of stale files from Snowflake stages"
+
+  # ===========================================================================
+  # gcp-pool-backup deployments — Backup GCP worker
+  # ===========================================================================
+  - name: example-flow-gcp-backup
+    entrypoint: example_flow.py:example_flow
+    work_pool:
+      name: gcp-pool-backup
+    tags: [gcp-backup, example]
+    parameters:
+      name: "Prefect-SPCS"
+    schedules:
+      - interval: 3600
+    enforce_parameter_schema: true
+    description: "Hello world flow to verify worker connectivity"
+
+  - name: snowflake-etl-gcp-backup
+    entrypoint: snowflake_flow.py:snowflake_etl
+    work_pool:
+      name: gcp-pool-backup
+    tags: [gcp-backup, snowflake]
+    schedules:
+      - cron: "0 6 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Run a Snowflake query from the Prefect worker"
+
+  - name: external-api-gcp-backup
+    entrypoint: external_api_flow.py:external_api_flow
+    work_pool:
+      name: gcp-pool-backup
+    tags: [gcp-backup, eai]
+    enforce_parameter_schema: true
+    description: "External API call demonstrating EAI egress"
+
+  - name: e2e-test-gcp-backup
+    entrypoint: e2e_test_flow.py:e2e_pipeline_test
+    work_pool:
+      name: gcp-pool-backup
+    tags: [gcp-backup, e2e]
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
+    enforce_parameter_schema: true
+    description: "End-to-end pipeline: sample data -> table -> dynamic table -> verify -> cleanup"
+
+  - name: analytics-revenue-gcp-backup
+    entrypoint: analytics/revenue_flow.py:analytics_revenue
+    work_pool:
+      name: gcp-pool-backup
+    tags: [gcp-backup, analytics]
+    enforce_parameter_schema: true
+    description: "Multi-file subfolder flow demonstrating sibling imports"
+
+  - name: quarterly-report-gcp-backup
+    entrypoint: analytics/reports/quarterly_flow.py:quarterly_report
+    work_pool:
+      name: gcp-pool-backup
+    tags: [gcp-backup, analytics, nested]
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
+    schedules:
+      - cron: "0 0 1 1,4,7,10 *"
+        timezone: "US/Pacific"
+    enforce_parameter_schema: true
+    description: "Deep nested import stress test: sibling, package, and root imports"
+
+  - name: data-quality-gcp-backup
+    entrypoint: data_quality_flow.py:data_quality_check
+    work_pool:
+      name: gcp-pool-backup
+    tags: [gcp-backup, data-quality, monitoring]
+    schedules:
+      - cron: "0 7 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Daily data quality checks on Snowflake tables"
+
+  - name: stage-cleanup-gcp-backup
+    entrypoint: stage_cleanup_flow.py:stage_cleanup
+    work_pool:
+      name: gcp-pool-backup
+    tags: [gcp-backup, maintenance, storage]
+    parameters:
+      retention_days: 30
+    schedules:
+      - cron: "0 3 * * *"
+        timezone: "UTC"
+    enforce_parameter_schema: true
+    description: "Daily cleanup of stale files from Snowflake stages"

@@ -1,0 +1,54 @@
+# Loki LogQL alerting rules for SPCS container logs.
+# Evaluated by Loki's ruler, routed to Grafana unified alerting via alertmanager_url.
+# The "fake" directory name is a Loki convention for the tenant ID in single-tenant mode.
+
+groups:
+  - name: spcs_log_alerts
+    rules:
+      # ── Error spike in SPCS container logs ─────────────────────
+      - alert: SPCSErrorSpike
+        expr: |
+          sum(count_over_time({job="spcs-logs", severity="ERROR"}[5m])) > 10
+        for: 2m
+        labels:
+          severity: warning
+          source: loki
+        annotations:
+          summary: "SPCS error log spike"
+          description: "More than 10 ERROR-level log entries in SPCS services over the last 5 minutes."
+
+      # ── OOM detected in SPCS logs ──────────────────────────────
+      - alert: SPCSContainerOOM
+        expr: |
+          count_over_time({job="spcs-logs"} |~ "(?i)(out of memory|OOM|oom-kill)" [10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          source: loki
+        annotations:
+          summary: "OOM detected in SPCS container"
+          description: "An out-of-memory event was detected in SPCS container logs."
+
+      # ── Crash loop detected ────────────────────────────────────
+      - alert: SPCSCrashLoop
+        expr: |
+          count_over_time({job="spcs-logs"} |~ "(?i)(crashloopbackoff|crash.?loop|repeated.?restart)" [10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          source: loki
+        annotations:
+          summary: "Crash loop detected in SPCS"
+          description: "Container crash-loop pattern detected in SPCS logs."
+
+      # ── Snowflake auth failure in poller logs ──────────────────
+      - alert: SPCSAuthFailure
+        expr: |
+          count_over_time({job="spcs-logs"} |~ "(?i)(authentication.?fail|token.?expir|oauth.?error|403 Forbidden)" [5m]) > 2
+        for: 1m
+        labels:
+          severity: warning
+          source: loki
+        annotations:
+          summary: "Authentication failures in SPCS"
+          description: "Multiple authentication or token errors detected in SPCS logs."

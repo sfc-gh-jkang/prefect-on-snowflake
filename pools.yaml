@@ -1,0 +1,72 @@
+# =============================================================================
+# pools.yaml — Work pool configuration
+#
+# Defines all Prefect work pools that deploy.py deploys flows to.
+# Add new external workers (Azure, AWS, K8s, on-prem) by adding entries here.
+#
+# Fields:
+#   type:        "spcs" (built-in, stage volume fallback) or "external" (git_clone only)
+#   pool_name:   Prefect work pool name (must exist on the Prefect server)
+#   suffix:      Deployment name suffix (e.g., "example-flow-{suffix}")
+#   tag:         Tag applied to all deployments on this pool
+#   worker_dir:  Relative path to worker docker-compose directory (external only)
+#   min_instances: (spcs only) Minimum SPCS service instances (default: 1)
+#   max_instances: (spcs only) Maximum SPCS service instances for auto-scaling (default: 1)
+#
+# Adding a new pool:
+#   1. Add an entry below
+#   2. Create workers/<name>/ with Dockerfile.worker + docker-compose.<name>.yaml
+#   3. Create the work pool: prefect work-pool create <pool_name> --type process
+#   4. Deploy: python flows/deploy.py --all
+# =============================================================================
+
+pools:
+  spcs:
+    type: spcs
+    pool_name: spcs-pool
+    suffix: local
+    tag: spcs
+    min_instances: 1
+    max_instances: 3
+
+  gcp:
+    type: external
+    pool_name: gcp-pool
+    suffix: gcp
+    tag: gcp
+    worker_dir: workers/gcp
+
+  aws:
+    type: external
+    pool_name: aws-pool
+    suffix: aws
+    tag: aws
+    worker_dir: workers/aws
+
+  aws-backup:
+    type: external
+    pool_name: aws-pool-backup
+    suffix: aws-backup
+    tag: aws-backup
+    worker_dir: workers/aws
+
+  azure:
+    type: external
+    pool_name: azure-pool
+    suffix: azure
+    tag: azure
+    worker_dir: workers/azure
+
+  azure-backup:
+    type: external
+    pool_name: azure-pool-backup
+    suffix: azure-backup
+    tag: azure-backup
+    worker_dir: workers/azure
+
+  gcp-backup:
+    type: external
+    pool_name: gcp-pool-backup
+    suffix: gcp-backup
+    tag: gcp-backup
+    worker_dir: workers/gcp

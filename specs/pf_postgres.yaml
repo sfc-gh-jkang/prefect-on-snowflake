@@ -1,0 +1,45 @@
+# GCP-only: Snowflake Managed Postgres is not available on GCP, so we run
+# postgres:16 as an SPCS container. AWS and Azure use Snowflake Managed
+# Postgres (PREFECT_PG) instead and do NOT deploy this service.
+#
+# IMPORTANT: Mount path is /pgdata (NOT /var/lib/postgresql/data) because
+# the old mount path has stale block storage data with an outdated password.
+# Block storage persists across DROP SERVICE on the same compute pool, and
+# POSTGRES_PASSWORD is only used during initial initdb — so changing the
+# secret has no effect when old data exists at the same mount path.
+spec:
+  containers:
+    - name: pf-postgres
+      image: /prefect_db/prefect_schema/prefect_repository/postgres:16
+      env:
+        POSTGRES_USER: "prefect"
+        POSTGRES_DB: "prefect"
+        PGDATA: "/pgdata/data"
+      secrets:
+        - snowflakeSecret:
+            objectName: prefect_pg_password
+          secretKeyRef: secret_string  # pragma: allowlist secret
+          envVarName: POSTGRES_PASSWORD
+      resources:
+        requests:
+          cpu: 0.5
+          memory: 1Gi
+        limits:
+          cpu: 2
+          memory: 4Gi
+      volumeMounts:
+        - name: pgdata-block
+          mountPath: /pgdata
+  endpoints:
+    - name: postgres
+      port: 5432
+      protocol: TCP
+  volumes:
+    - name: pgdata-block
+      source: block
+      size: 10Gi
+  platformMonitor:
+    metricConfig:
+      groups:
+        - system
+        - system_limits

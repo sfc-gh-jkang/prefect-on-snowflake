@@ -1,0 +1,173 @@
+# Grafana-managed alert rules — supplements Prometheus alerting rules.
+# These rules use Grafana unified alerting and can query both Prometheus and Loki.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: prefect-grafana-alerts
+    folder: Prefect SPCS
+    interval: 60s
+    rules:
+      # ── Exporter stale — no successful poll in 2+ minutes ──────
+      - uid: exporter-stale
+        title: Prefect Exporter Stale
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              expr: prefect_exporter_poll_duration_seconds
+              instant: true
+              refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [0.001]
+              refId: C
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 2m
+        labels:
+          severity: warning
+          source: grafana
+        annotations:
+          summary: "Prefect exporter has not completed a poll cycle recently"
+          description: "The prefect-exporter sidecar may be stuck or crashed."
+
+      # ── Flow run duration regression ───────────────────────────
+      - uid: flow-duration-regression
+        title: Flow Run Duration Regression
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              expr: prefect_flow_run_duration_p95_seconds
+              instant: true
+              refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [300]
+              refId: C
+        noDataState: OK
+        execErrState: OK
+        for: 5m
+        labels:
+          severity: warning
+          source: grafana
+        annotations:
+          summary: "Flow run p95 duration exceeds 5 minutes"
+          description: "The 95th percentile flow run duration has exceeded 300 seconds, indicating a possible regression."
+
+      # ── SPCS error log spike (Loki) ────────────────────────────
+      - uid: loki-error-spike
+        title: SPCS Error Log Spike
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: loki
+            model:
+              expr: 'sum(count_over_time({job="spcs-logs", severity="ERROR"}[5m]))'
+              instant: true
+              refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [10]
+              refId: C
+        noDataState: OK
+        execErrState: OK
+        for: 2m
+        labels:
+          severity: warning
+          source: grafana
+        annotations:
+          summary: "SPCS error log spike detected"
+          description: "More than 10 ERROR-level log entries from SPCS services in the last 5 minutes."
+
+      # ── Worker offline — no heartbeat in 5+ minutes ──────────────
+      - uid: worker-offline
+        title: Prefect Worker Offline
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              expr: prefect_work_pool_workers{status="ONLINE"}
+              instant: true
+              refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: min
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [1]
+              refId: C
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 5m
+        labels:
+          severity: critical
+          source: grafana
+        annotations:
+          summary: "No online workers detected"
+          description: "All Prefect work pool workers have been offline for 5+ minutes. Flows will not execute."

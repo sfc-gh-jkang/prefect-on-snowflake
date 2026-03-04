@@ -1,0 +1,18 @@
+definition_version: 2
+entities:
+  prefect_dashboard:
+    type: streamlit
+    identifier:
+      name: PREFECT_DASHBOARD_APP
+      database: PREFECT_DB
+      schema: PREFECT_SCHEMA
+    query_warehouse: COMPUTE_WH
+    runtime_name: SYSTEM$ST_CONTAINER_RUNTIME_PY3_11
+    compute_pool: PREFECT_DASHBOARD_POOL
+    external_access_integrations:
+      - PREFECT_DASHBOARD_EAI
+    main_file: app.py
+    title: Prefect SPCS Observability
+    artifacts:
+      - app.py
+      - pyproject.toml

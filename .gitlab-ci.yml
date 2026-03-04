@@ -1,0 +1,235 @@
+# =============================================================================
+# GitLab CI/CD for Prefect SPCS
+#
+# Stages:
+#   lint   — ruff check + format on every push/MR
+#   test   — validate + pytest on every push/MR
+#   diff   — plan-style deployment diff on MRs (what would change)
+#   build  — build & push Docker images to SPCS registry (main only)
+#   deploy — sync flows + specs + register deployments + automations (main, manual)
+#
+# Required CI/CD Variables (Settings > CI/CD > Variables):
+#   DOCKERHUB_USER       — Docker Hub username (avoids pull rate limits)
+#   DOCKERHUB_TOKEN      — Docker Hub access token (masked)
+#   DOCKER_AUTH_CONFIG    — JSON: {"auths":{"https://index.docker.io/v1/":{"auth":"<base64>"}}}
+#                           (base64 = base64-encode of "user:token"; enables authenticated pulls
+#                           for job images before before_script runs)
+#   SNOWFLAKE_ACCOUNT    — e.g. "YOUR_ORG-YOUR_ACCOUNT"
+#   SNOWFLAKE_USER       — e.g. "YOUR_USER"
+#   SNOWFLAKE_PAT        — Snowflake Programmatic Access Token (masked, protected)
+#   PREFECT_API_URL      — e.g. "https://<endpoint>/api"
+#   GIT_REPO_URL         — this repo's HTTPS clone URL
+#   GIT_ACCESS_TOKEN     — GitLab project/personal access token (masked)
+#   PREFECT_ENV          — (optional) "dev", "staging", "prod" — controls deployment naming
+# =============================================================================
+
+include:
+  - template: Jobs/SAST.gitlab-ci.yml
+  - template: Jobs/Secret-Detection.gitlab-ci.yml
+
+stages:
+  - lint
+  - test
+  - diff
+  - build
+  - deploy
+
+variables:
+  PYTHON_VERSION: "3.12"
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
+
+# --- Reusable YAML fragments ---
+.snowflake_setup: &snowflake_setup
+  - mkdir -p ~/.snowflake
+  - printf '[ci]\naccount = "%s"\nuser = "%s"\nauthenticator = "programmatic_access_token"\ntoken = "%s"\nrole = "PREFECT_ROLE"\ndatabase = "PREFECT_DB"\nschema = "PREFECT_SCHEMA"\nwarehouse = "PREFECT_WH"\n' "$SNOWFLAKE_ACCOUNT" "$SNOWFLAKE_USER" "$SNOWFLAKE_PAT" > ~/.snowflake/connections.toml
+  - chmod 0600 ~/.snowflake/connections.toml
+
+# ---------------------------------------------------------------------------
+# Lint — ruff check + format on every push and merge request
+# ---------------------------------------------------------------------------
+lint:
+  stage: lint
+  image: python:${PYTHON_VERSION}-slim
+  interruptible: true
+  before_script:
+    - pip install ruff --quiet
+  script:
+    - ruff check flows/ scripts/ tests/ --output-format=gitlab
+    - ruff format flows/ scripts/ tests/ --check
+  cache:
+    key: "ruff-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - .ruff_cache/
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+    - if: $CI_COMMIT_BRANCH
+
+# ---------------------------------------------------------------------------
+# Test — runs on every push and merge request
+# ---------------------------------------------------------------------------
+test:
+  stage: test
+  image: python:${PYTHON_VERSION}-slim
+  interruptible: true
+  before_script:
+    - pip install uv --quiet
+    - uv sync
+  script:
+    # Offline validation of all FlowSpec registry entries
+    - uv run python flows/deploy.py --validate
+    # Unit + integration tests (skip e2e — requires live infrastructure)
+    - uv run pytest tests/ --ignore=tests/test_e2e_hybrid.py --ignore=tests/test_e2e_spcs.py -q
+        --cov=flows --cov=scripts --cov-report=term-missing --cov-report=xml:coverage.xml
+        --junitxml=report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  cache:
+    key: "uv-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - .uv-cache/
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+    - if: $CI_COMMIT_BRANCH
+
+# ---------------------------------------------------------------------------
+# Diff — show what deployments would change (MRs only, informational)
+# ---------------------------------------------------------------------------
+diff:
+  stage: diff
+  image: python:${PYTHON_VERSION}-slim
+  interruptible: true
+  before_script:
+    - pip install uv --quiet
+    - uv sync
+  script:
+    - |
+      PREFECT_API_URL="${PREFECT_API_URL}" \
+      PREFECT_CLIENT_CUSTOM_HEADERS="{\"Authorization\": \"Snowflake Token=\\\"${SNOWFLAKE_PAT}\\\"\"}" \
+      PREFECT_ENV="${PREFECT_ENV:-}" \
+      GIT_REPO_URL="${GIT_REPO_URL}" \
+      GIT_BRANCH="${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME:-main}" \
+      uv run python flows/deploy.py --diff --all
+  allow_failure: true
+  cache:
+    key: "uv-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - .uv-cache/
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+
+# ---------------------------------------------------------------------------
+# Build — build Docker images and push to SPCS registry (main only)
+# ---------------------------------------------------------------------------
+build:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  retry: 2
+  before_script:
+    - if [ -n "$DOCKERHUB_USER" ] && [ -n "$DOCKERHUB_TOKEN" ]; then echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin; else echo "DOCKERHUB credentials not set — skipping Docker Hub login"; fi
+    - apk add --no-cache python3 py3-pip bash curl gcc g++ musl-dev python3-dev
+    - pip install snowflake-cli-labs --quiet --break-system-packages
+    - *snowflake_setup
+    - snow spcs image-registry login --connection ci
+  script:
+    - bash scripts/build_and_push.sh --connection ci
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" && $SNOWFLAKE_ACCOUNT && $SNOWFLAKE_USER && $SNOWFLAKE_PAT
+
+# ---------------------------------------------------------------------------
+# Deploy — sync specs + flows + register deployments (main, manual trigger)
+# ---------------------------------------------------------------------------
+deploy:
+  stage: deploy
+  image: python:${PYTHON_VERSION}-slim
+  environment: production
+  retry: 2
+  before_script:
+    - pip install uv --quiet
+    - uv sync
+    - pip install "snowflake-cli-labs>=3.0,<4" --quiet
+    - *snowflake_setup
+  script:
+    # Upload spec files to @PREFECT_SPECS stage
+    - snow stage copy specs/ @PREFECT_DB.PREFECT_SCHEMA.PREFECT_SPECS/ --overwrite --connection ci
+    # Upload flow files to @PREFECT_FLOWS stage
+    - bash scripts/sync_flows.sh --connection ci
+    # Show deployment diff before applying
+    - |
+      PREFECT_API_URL="${PREFECT_API_URL}" \
+      PREFECT_CLIENT_CUSTOM_HEADERS="{\"Authorization\": \"Snowflake Token=\\\"${SNOWFLAKE_PAT}\\\"\"}" \
+      PREFECT_ENV="${PREFECT_ENV:-}" \
+      GIT_REPO_URL="${GIT_REPO_URL}" \
+      GIT_BRANCH="${GIT_BRANCH:-main}" \
+      uv run python flows/deploy.py --diff --all
+    # Register all deployments via deploy.py
+    - |
+      PREFECT_API_URL="${PREFECT_API_URL}" \
+      PREFECT_CLIENT_CUSTOM_HEADERS="{\"Authorization\": \"Snowflake Token=\\\"${SNOWFLAKE_PAT}\\\"\"}" \
+      PREFECT_ENV="${PREFECT_ENV:-}" \
+      GIT_REPO_URL="${GIT_REPO_URL}" \
+      GIT_BRANCH="${GIT_BRANCH:-main}" \
+      GIT_ACCESS_TOKEN="${GIT_ACCESS_TOKEN}" \
+      uv run python flows/deploy.py --all
+    # Set up Prefect automations (skip if webhook URLs not configured)
+    - |
+      if [ -n "${SLACK_WEBHOOK_URL:-}" ] || [ -n "${ALERT_WEBHOOK_URL:-}" ]; then
+        PREFECT_API_URL="${PREFECT_API_URL}" \
+        PREFECT_CLIENT_CUSTOM_HEADERS="{\"Authorization\": \"Snowflake Token=\\\"${SNOWFLAKE_PAT}\\\"\"}" \
+        SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}" \
+        ALERT_WEBHOOK_URL="${ALERT_WEBHOOK_URL:-}" \
+        uv run python scripts/setup_automations.py
+      else
+        echo "SLACK_WEBHOOK_URL and ALERT_WEBHOOK_URL not set — skipping automations setup"
+      fi
+  cache:
+    key: "uv-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - .uv-cache/
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" && $SNOWFLAKE_ACCOUNT && $SNOWFLAKE_USER && $SNOWFLAKE_PAT
+      when: manual
+  needs:
+    - job: build
+      optional: true
+
+# ---------------------------------------------------------------------------
+# E2E — nightly scheduled pipeline against live SPCS infrastructure
+# ---------------------------------------------------------------------------
+e2e:
+  stage: test
+  image: python:${PYTHON_VERSION}-slim
+  interruptible: true
+  before_script:
+    - pip install uv --quiet
+    - uv sync
+  script:
+    - |
+      PREFECT_SPCS_API_URL="${PREFECT_SPCS_API_URL}" \
+      SNOWFLAKE_ACCOUNT="${SNOWFLAKE_ACCOUNT}" \
+      SNOWFLAKE_USER="${SNOWFLAKE_USER}" \
+      SNOWFLAKE_PAT="${SNOWFLAKE_PAT}" \
+      uv run pytest tests/test_e2e_spcs.py tests/test_e2e_hybrid.py -v \
+        -m e2e -o "addopts=" \
+        --junitxml=report-e2e.xml
+  artifacts:
+    when: always
+    reports:
+      junit: report-e2e.xml
+  cache:
+    key: "uv-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - .uv-cache/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $SNOWFLAKE_ACCOUNT && $SNOWFLAKE_USER && $SNOWFLAKE_PAT
+    - if: $CI_COMMIT_BRANCH == "main" && $SNOWFLAKE_ACCOUNT && $SNOWFLAKE_USER && $SNOWFLAKE_PAT
+      when: manual

@@ -1,0 +1,21 @@
+spec:
+  containers:
+    - name: pf-deploy-job
+      image: /prefect_db/prefect_schema/prefect_repository/prefect-worker:latest
+      command:
+        - bash
+        - -c
+        - python /opt/prefect/flows/deploy.py $DEPLOY_FLAGS
+      env:
+        PREFECT_API_URL: "http://pf-server:4200/api"
+        DEPLOY_FLAGS: ""
+      volumeMounts:
+        - name: flows
+          mountPath: /opt/prefect/flows
+  volumes:
+    - name: flows
+      source: stage
+      stageConfig:
+        name: "@PREFECT_DB.PREFECT_SCHEMA.PREFECT_FLOWS"
+      uid: 0
+      gid: 0
