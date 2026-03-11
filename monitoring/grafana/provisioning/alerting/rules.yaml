@@ -139,7 +139,7 @@ groups:
           - refId: A
             datasourceUid: prometheus
             model:
-              expr: prefect_flow_runs{state="FAILED"} + prefect_flow_runs{state="CRASHED"}
+              expr: sum(prefect_flow_runs{state=~"FAILED|CRASHED"})
               instant: true
               refId: A
             relativeTimeRange:

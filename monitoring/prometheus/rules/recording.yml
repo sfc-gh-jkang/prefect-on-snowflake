@@ -35,22 +35,20 @@ groups:
       - record: prefect:flow_success_rate:ratio
         expr: |
           clamp_min(
-            prefect_flow_runs{state="COMPLETED"}
+            sum(prefect_flow_runs{state="COMPLETED"})
             / clamp_min(
-                prefect_flow_runs{state="COMPLETED"}
-                + prefect_flow_runs{state="FAILED"}
-                + prefect_flow_runs{state="CRASHED"},
+                sum(prefect_flow_runs{state="COMPLETED"})
+                + sum(prefect_flow_runs{state="FAILED"})
+                + sum(prefect_flow_runs{state="CRASHED"}),
               1),
           0)
 
       # ── Total active flow runs ─────────────────────────────────
       - record: prefect:flow_runs_active:total
         expr: |
-          prefect_flow_runs{state="RUNNING"}
-          + prefect_flow_runs{state="PENDING"}
+          sum(prefect_flow_runs{state=~"RUNNING|PENDING"})
 
       # ── Total failed flow runs ─────────────────────────────────
       - record: prefect:flow_runs_failed:total
         expr: |
-          prefect_flow_runs{state="FAILED"}
-          + prefect_flow_runs{state="CRASHED"}
+          sum(prefect_flow_runs{state=~"FAILED|CRASHED"})
