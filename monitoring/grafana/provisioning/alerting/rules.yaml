@@ -131,7 +131,7 @@ groups:
           summary: "SPCS error log spike detected"
           description: "More than 10 ERROR-level log entries from SPCS services in the last 5 minutes."
 
-      # ── Flow run failures detected ──────────────────────────────
+      # ── New flow run failures (rate-based, auto-resolves) ────────
       - uid: flow-run-failure
         title: Flow Run Failure
         condition: C
@@ -139,11 +139,11 @@ groups:
           - refId: A
             datasourceUid: prometheus
             model:
-              expr: sum(prefect_flow_runs{state=~"FAILED|CRASHED"})
+              expr: sum(delta(prefect_flow_runs{state=~"FAILED|CRASHED"}[5m]))
               instant: true
               refId: A
             relativeTimeRange:
-              from: 300
+              from: 600
               to: 0
           - refId: B
             datasourceUid: __expr__
@@ -164,13 +164,13 @@ groups:
               refId: C
         noDataState: OK
         execErrState: OK
-        for: 1m
+        for: 0s
         labels:
           severity: warning
           source: grafana
         annotations:
-          summary: "Flow run failures detected"
-          description: "{{ $value }} failed or crashed flow runs detected. Check Prefect UI for details."
+          summary: "New flow run failures detected"
+          description: "{{ $value }} new failed or crashed flow runs in the last 5 minutes. Check Prefect UI for details."
 
       # ── Worker offline — no heartbeat in 5+ minutes ──────────────
       - uid: worker-offline

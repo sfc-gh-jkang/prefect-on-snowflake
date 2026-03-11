@@ -45,15 +45,15 @@ groups:
           summary: "Prefect server is down"
           description: "No successful scrape of Prefect server for 2+ minutes."
 
-      # High flow failure rate
+      # High flow failure rate (new failures only, auto-resolves)
       - alert: HighFlowFailureRate
-        expr: prefect:flow_runs_failed:total > 0
-        for: 2m
+        expr: sum(delta(prefect_flow_runs{state=~"FAILED|CRASHED"}[5m])) > 0
+        for: 0s
         labels:
           severity: warning
         annotations:
-          summary: "Flow failures detected"
-          description: "{{ $value }} failed/crashed flow runs in the current window."
+          summary: "New flow failures detected"
+          description: "{{ $value }} new failed/crashed flow runs in the last 5 minutes."
 
   - name: vm_workers
     rules:
