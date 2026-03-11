@@ -57,15 +57,20 @@ groups:
 
   - name: vm_workers
     rules:
-      # Worker offline
+      # Worker offline — uses Prefect exporter metrics (tracks all pools).
+      # The old "up{job=~prefect-worker-.*}" approach doesn't work because
+      # the SPCS worker has no /metrics endpoint (always up=0) and VM workers
+      # push via remote_write (no scrape target). Instead we check the
+      # work-pool-level metric from the prefect-exporter sidecar.
+      # Grafana also has a parallel worker-offline alert for email notifications.
       - alert: WorkerOffline
-        expr: up{job=~"prefect-worker-.*"} == 0
-        for: 3m
+        expr: sum(prefect_work_pool_workers{status="ONLINE"}) == 0
+        for: 5m
         labels:
           severity: critical
         annotations:
-          summary: "Worker {{ $labels.instance }} offline"
-          description: "No metrics from {{ $labels.job }} for 3+ minutes."
+          summary: "All Prefect workers offline"
+          description: "No online workers across any work pool for 5+ minutes. Flow runs will not execute."
 
       # VM disk pressure
       - alert: DiskSpaceRunningLow

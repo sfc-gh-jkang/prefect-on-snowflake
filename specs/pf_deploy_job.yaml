@@ -9,6 +9,13 @@ spec:
       env:
         PREFECT_API_URL: "http://pf-server:4200/api"
         DEPLOY_FLAGS: ""
+        GIT_REPO_URL: "CHANGE_ME_GIT_REPO_URL"
+        GIT_BRANCH: "main"
+      secrets:
+        - snowflakeSecret:
+            objectName: git_access_token
+          secretKeyRef: secret_string  # pragma: allowlist secret
+          envVarName: GIT_ACCESS_TOKEN
       volumeMounts:
         - name: flows
           mountPath: /opt/prefect/flows

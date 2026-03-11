@@ -33,7 +33,7 @@ Production-grade, self-hosted Prefect orchestration server running entirely on S
             +---------------+
 ```
 
-**5–6 SPCS services** (6 on GCP with containerized Postgres) + **Snowflake Managed Postgres** (AWS/Azure) across **3–4 compute pools**, with hybrid workers on GCP and AWS.
+**5–6 SPCS services** (6 on GCP with containerized Postgres) + **Snowflake Managed Postgres** (AWS/Azure) across **3–4 compute pools**, with hybrid workers on GCP, AWS, and Azure.
 
 <details>
 <summary>Mermaid Architecture Diagram (click to expand)</summary>
@@ -252,6 +252,32 @@ via Prefect's `git_clone` pull step. The only difference between cloud providers
 DNS resolver in `nginx.conf` (GCP: `8.8.8.8`, AWS VPC: `169.254.169.253`).
 See [Hybrid Worker Architecture](#hybrid-worker-architecture) below and
 [workers/aws/README.md](workers/aws/README.md) for a step-by-step guide to adding new AWS workers.
+
+### Hybrid Worker (Azure)
+
+```bash
+# Set required environment variables (same pattern as GCP/AWS)
+export SNOWFLAKE_PAT="<role-restricted-pat-for-PREFECT_SVC>"
+export SPCS_ENDPOINT="<spcs-public-endpoint-hostname>"
+export GIT_ACCESS_TOKEN="<git-access-token>"
+export GIT_REPO_URL="https://github.com/myorg/myrepo.git"
+export GIT_BRANCH="main"
+export SNOWFLAKE_ACCOUNT="<org-account>"
+export SNOWFLAKE_USER="PREFECT_SVC"
+
+# Start the auth-proxy + worker stack
+docker compose -f workers/azure/docker-compose.azure.yaml --env-file .env up -d
+```
+
+Uses the same **nginx auth-proxy sidecar** pattern as GCP and AWS. The auth-proxy
+listens on port **4204** (GCP: 4201, AWS: 4202). The `Dockerfile.worker` is symlinked
+from the AWS directory — all three clouds share the same worker image. The DNS resolver
+in `nginx.conf` uses Azure's default (`168.63.129.16`).
+
+> **Note:** Azure VMs in Snowflake SE demo accounts may have restricted permissions.
+> If you cannot provision a VM, run the worker stack on any machine with Docker access
+> (e.g., a GCP VM or local workstation) — the auth-proxy handles SPCS authentication
+> regardless of where it runs.
 
 ### Local Auth-Proxy (CSRF Fix)
 
@@ -784,7 +810,7 @@ The `.gitlab-ci.yml` defines five stages:
    | `DOCKERHUB_TOKEN` | *(optional — Docker Hub access token)* | No | Yes |
    | `DOCKER_AUTH_CONFIG` | *(optional — see below)* | No | Yes |
 
-   > **TODO: Configure these variables in GitLab → Settings → CI/CD → Variables.**
+   > **Configure these variables in GitLab → Settings → CI/CD → Variables.**
    > Without `SNOWFLAKE_*` variables, the build/deploy/e2e stages are skipped automatically.
    >
    > **`SNOWFLAKE_PAT`**: Copy the `token` value from `~/.snowflake/connections.toml`
@@ -1147,14 +1173,15 @@ The hybrid worker pattern lets Prefect orchestrate work on external infrastructu
 
 ### Cloud-Specific Differences
 
-| Setting | GCP Worker | AWS Worker |
-|---------|-----------|------------|
-| DNS resolver in `nginx.conf` | `8.8.8.8` (Google DNS) | `169.254.169.253` (Amazon VPC DNS) |
-| Provisioning | `setup_gcp_worker.sh` (gcloud) | `setup_aws_worker.sh` (aws CLI + user-data) |
-| Remote access | SSH | SSM (private subnet, no public IP) |
-| AMI / Image | Any Docker-capable VM | AL2023 **full** AMI (not minimal — cloud-init fails on minimal) |
-| Buildx | Included with Docker | Must install separately (GitHub releases) |
-| Compose file | `docker-compose.gcp.yaml` | `docker-compose.aws.yaml` |
+| Setting | GCP Worker | AWS Worker | Azure Worker |
+|---------|-----------|------------|--------------|
+| DNS resolver in `nginx.conf` | `8.8.8.8` (Google DNS) | `169.254.169.253` (Amazon VPC DNS) | `168.63.129.16` (Azure DNS) |
+| Provisioning | `setup_gcp_worker.sh` (gcloud) | `setup_aws_worker.sh` (aws CLI + user-data) | Manual (Docker Compose on any VM) |
+| Remote access | SSH | SSM (private subnet, no public IP) | SSH / Azure Bastion |
+| AMI / Image | Any Docker-capable VM | AL2023 **full** AMI (not minimal — cloud-init fails on minimal) | Any Docker-capable VM |
+| Buildx | Included with Docker | Must install separately (GitHub releases) | Included with Docker |
+| Compose file | `docker-compose.gcp.yaml` | `docker-compose.aws.yaml` | `docker-compose.azure.yaml` |
+| Auth-proxy port | 4201 | 4202 | 4204 |
 
 > **AWS Gotchas (learned the hard way):**
 > - **EC2 instances are in `us-west-2`** (SE demo account default), not `us-east-1` where the
@@ -1774,6 +1801,26 @@ docker compose -f workers/gcp/docker-compose.gcp.yaml up -d
 > rebuild images. Always use `docker compose up -d` (which recreates containers)
 > to pick up changes to `.env`, Dockerfiles, or compose config.
 
+### Upgrading the AWS Worker
+
+Same pattern as GCP. The worker runs on an EC2 instance (AL2023).
+
+```bash
+# On the EC2 instance (via SSM):
+cd /opt/prefect
+docker compose -f workers/aws/docker-compose.aws.yaml build --no-cache
+docker compose -f workers/aws/docker-compose.aws.yaml up -d
+```
+
+### Upgrading the Azure Worker
+
+Same pattern as GCP/AWS. The `Dockerfile.worker` is symlinked from `workers/aws/`.
+
+```bash
+docker compose -f workers/azure/docker-compose.azure.yaml build --no-cache
+docker compose -f workers/azure/docker-compose.azure.yaml up -d
+```
+
 ### Upgrading Local Development Stack
 
 ```bash
@@ -1798,6 +1845,7 @@ Prefect version bump:
   □ ALTER SERVICE PF_SERVER       (caution: may change endpoint URL)
   □ Rebuild + restart GCP worker  (docker compose build + up -d)
   □ Rebuild + restart AWS worker  (docker compose build + up -d, or re-launch EC2)
+  □ Rebuild + restart Azure worker (docker compose build + up -d)
 
 Python version bump:
   □ images/prefect/Dockerfile     (FROM python:X.Y-slim)

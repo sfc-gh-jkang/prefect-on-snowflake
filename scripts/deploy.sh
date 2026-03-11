@@ -90,10 +90,14 @@ upload_specs() {
 
     local git_url="${GIT_REPO_URL:-CHANGE_ME_GIT_REPO_URL}"
     local git_branch="${GIT_BRANCH:-main}"
-    sed -i.bak \
-      -e "s|GIT_REPO_URL: \"CHANGE_ME_GIT_REPO_URL\"|GIT_REPO_URL: \"${git_url}\"|" \
-      -e "s|GIT_BRANCH: \"main\"|GIT_BRANCH: \"${git_branch}\"|" \
-      "$tmp_dir/pf_worker.yaml"
+    for spec_file in pf_worker.yaml pf_deploy_job.yaml; do
+      if [[ -f "$tmp_dir/$spec_file" ]]; then
+        sed -i.bak \
+          -e "s|GIT_REPO_URL: \"CHANGE_ME_GIT_REPO_URL\"|GIT_REPO_URL: \"${git_url}\"|" \
+          -e "s|GIT_BRANCH: \"main\"|GIT_BRANCH: \"${git_branch}\"|" \
+          "$tmp_dir/$spec_file"
+      fi
+    done
     rm -f "$tmp_dir"/*.bak
 
     snow stage copy "$tmp_dir/" @PREFECT_DB.PREFECT_SCHEMA.PREFECT_SPECS/ \
