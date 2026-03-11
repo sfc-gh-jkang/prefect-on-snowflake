@@ -1,11 +1,14 @@
 """Data quality checks: table freshness, row counts, and schema drift detection.
 
-Scheduled daily — validates that key tables in PREFECT_DB have recent data
-and expected row count ranges. Reports issues via flow hooks.
+Scheduled daily — runs e2e-pipeline-test as a prerequisite subflow to ensure
+tables exist, then validates row counts and freshness thresholds.
+Reports issues via flow hooks.
 """
 
 from __future__ import annotations
 
+from e2e_test_flow import cleanup as e2e_cleanup
+from e2e_test_flow import e2e_pipeline_test
 from hooks import on_flow_failure
 from prefect import flow, get_run_logger, task
 from shared_utils import execute_query, table_name
@@ -110,6 +113,7 @@ def check_freshness(tbl: str, max_hours: int) -> dict:
 def data_quality_check():
     """Run data quality checks across configured tables.
 
+    0. Run e2e-pipeline-test subflow (creates/refreshes E2E tables)
     1. Verify each table exists
     2. Check row counts meet minimums
     3. Verify data freshness thresholds
@@ -119,6 +123,10 @@ def data_quality_check():
     logger.info("=" * 60)
     logger.info("DATA QUALITY CHECK — START")
     logger.info("=" * 60)
+
+    logger.info("Running e2e-pipeline-test as prerequisite subflow ...")
+    e2e_pipeline_test(skip_cleanup=True)
+    logger.info("e2e-pipeline-test completed — tables are fresh.")
 
     results: list[dict] = []
     failures: list[str] = []
@@ -152,6 +160,9 @@ def data_quality_check():
     for f in failures:
         logger.warning("  FAIL: %s", f)
     logger.info("=" * 60)
+
+    e2e_cleanup()
+    logger.info("E2E tables cleaned up.")
 
     if failures:
         raise RuntimeError(

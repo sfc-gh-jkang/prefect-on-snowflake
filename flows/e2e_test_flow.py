@@ -137,14 +137,14 @@ def cleanup() -> None:
     retry_delay_seconds=60,
     on_failure=[on_flow_failure],
 )
-def e2e_pipeline_test():
+def e2e_pipeline_test(skip_cleanup: bool = False):
     """End-to-end Snowflake pipeline test.
 
     1. Query sample data (read-only)
     2. Create source table via CTAS
     3. Create dynamic table on top
     4. Verify dynamic table refreshed with data
-    5. Clean up both tables
+    5. Clean up both tables (unless skip_cleanup=True)
     """
     print("=" * 60)
     print("E2E PIPELINE TEST — START")
@@ -154,7 +154,10 @@ def e2e_pipeline_test():
     row_count = create_source_table()
     create_dynamic_table()
     summary_rows = verify_dynamic_table()
-    cleanup()
+    if not skip_cleanup:
+        cleanup()
+    else:
+        print("Skipping cleanup — tables left for downstream checks.")
 
     print("=" * 60)
     print("E2E PIPELINE TEST — ALL CHECKS PASSED")

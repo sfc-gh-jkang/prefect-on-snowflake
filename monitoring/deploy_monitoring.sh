@@ -143,10 +143,22 @@ snow stage copy "$PROJECT_DIR/monitoring/loki/rules/fake/alerts.yaml" \
   "@${DB}.${SCHEMA}.${STAGE}/loki/rules/fake/" \
   --connection "$CONNECTION" --overwrite
 
-# SPCS spec file (must be on stage for CREATE SERVICE ... FROM @stage)
-snow stage copy "$PROJECT_DIR/monitoring/specs/pf_monitor.yaml" \
-  "@${DB}.${SCHEMA}.${STAGE}/specs/" \
+# SPCS spec file — substitute SMTP config from env, then upload.
+# The repo spec uses CHANGE_ME@example.com placeholders; we replace them
+# with real values from .env so secrets never leak into version control.
+SMTP_USER="${GRAFANA_SMTP_USER:-CHANGE_ME@example.com}"
+SMTP_RECIPIENTS="${GRAFANA_SMTP_RECIPIENTS:-${GRAFANA_SMTP_USER:-CHANGE_ME@example.com}}"
+SPEC_SRC="$PROJECT_DIR/monitoring/specs/pf_monitor.yaml"
+SPEC_TMP="$(mktemp)"
+sed \
+  -e "s|GF_SMTP_USER: \"CHANGE_ME@example.com\"|GF_SMTP_USER: \"${SMTP_USER}\"|" \
+  -e "s|GF_SMTP_FROM_ADDRESS: \"CHANGE_ME@example.com\"|GF_SMTP_FROM_ADDRESS: \"${SMTP_USER}\"|" \
+  -e "s|GF_SMTP_ALERT_RECIPIENTS: \"CHANGE_ME@example.com\"|GF_SMTP_ALERT_RECIPIENTS: \"${SMTP_RECIPIENTS}\"|" \
+  "$SPEC_SRC" > "$SPEC_TMP"
+snow stage copy "$SPEC_TMP" \
+  "@${DB}.${SCHEMA}.${STAGE}/specs/pf_monitor.yaml" \
   --connection "$CONNECTION" --overwrite
+rm -f "$SPEC_TMP"
 
 echo "  Uploaded all configs + spec."
 

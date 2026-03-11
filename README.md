@@ -1508,6 +1508,21 @@ read from the `GITLAB_HOST` env var (defaults to `gitlab.com`). If you use a sel
 GitLab instance, set `GITLAB_HOST` in your worker's environment. The flow also requires
 `GITLAB_PROJECT_ID` and `GIT_ACCESS_TOKEN` env vars.
 
+### `CREATE DYNAMIC TABLE` Is a Separate Privilege
+
+Snowflake's `CREATE TABLE` grant does **not** include `CREATE DYNAMIC TABLE` — they are
+separate schema-level privileges. If E2E flows fail with `Insufficient privileges to
+operate on schema`, check whether `CREATE DYNAMIC TABLE` is granted:
+
+```sql
+SHOW GRANTS ON SCHEMA PREFECT_DB.PREFECT_SCHEMA;
+-- If missing:
+GRANT CREATE DYNAMIC TABLE ON SCHEMA PREFECT_DB.PREFECT_SCHEMA TO ROLE PREFECT_ROLE;
+```
+
+The setup script `sql/01_setup_database.sql` includes this grant, but older deployments
+may need it applied manually.
+
 ### Prefect Exporter Image Tag Mismatch
 
 The monitoring spec (`pf_monitor.yaml`) references `prefect-exporter:v3-status`.
