@@ -47,13 +47,13 @@ groups:
 
       # High flow failure rate
       - alert: HighFlowFailureRate
-        expr: rate(prefect_flow_runs_total{state="FAILED"}[15m]) / rate(prefect_flow_runs_total[15m]) > 0.3
-        for: 5m
+        expr: prefect:flow_runs_failed:total > 0
+        for: 2m
         labels:
           severity: warning
         annotations:
-          summary: "Flow failure rate above 30%"
-          description: "{{ $value | humanizePercentage }} of flow runs are failing."
+          summary: "Flow failures detected"
+          description: "{{ $value }} failed/crashed flow runs in the current window."
 
   - name: vm_workers
     rules:
