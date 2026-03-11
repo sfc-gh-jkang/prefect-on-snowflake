@@ -24,7 +24,7 @@ spec:
       env:
         PREFECT_API_URL: "http://pf-server:4200/api"
         SNOWFLAKE_WAREHOUSE: "COMPUTE_WH"
-        GIT_REPO_URL: "https://github.com/your-org/your-repo.git"
+        GIT_REPO_URL: "CHANGE_ME_GIT_REPO_URL"
         GIT_BRANCH: "main"
         PREFECT_WORKER_WEBSERVER_HOST: "0.0.0.0"
         PREFECT_WORKER_WEBSERVER_PORT: "8080"

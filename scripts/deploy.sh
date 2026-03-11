@@ -17,6 +17,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 SQL_DIR="$PROJECT_DIR/sql"
 
+# --- Load .env (if present) for deploy-time substitution ---
+ENV_FILE="$PROJECT_DIR/.env"
+if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+fi
+
 # --- Parse arguments ---
 CONN=""
 UPDATE_MODE=false
@@ -73,6 +82,25 @@ services_exist() {
     [[ "${count}" -gt 0 ]]
 }
 
+# --- Upload specs with .env substitution ---
+upload_specs() {
+    local tmp_dir
+    tmp_dir="$(mktemp -d)"
+    cp "$PROJECT_DIR"/specs/*.yaml "$tmp_dir/"
+
+    local git_url="${GIT_REPO_URL:-CHANGE_ME_GIT_REPO_URL}"
+    local git_branch="${GIT_BRANCH:-main}"
+    sed -i.bak \
+      -e "s|GIT_REPO_URL: \"CHANGE_ME_GIT_REPO_URL\"|GIT_REPO_URL: \"${git_url}\"|" \
+      -e "s|GIT_BRANCH: \"main\"|GIT_BRANCH: \"${git_branch}\"|" \
+      "$tmp_dir/pf_worker.yaml"
+    rm -f "$tmp_dir"/*.bak
+
+    snow stage copy "$tmp_dir/" @PREFECT_DB.PREFECT_SCHEMA.PREFECT_SPECS/ \
+        --overwrite --connection "$CONN"
+    rm -rf "$tmp_dir"
+}
+
 echo "============================================="
 echo "  Prefect SPCS Deployment"
 echo "  Connection: ${CONN}"
@@ -89,10 +117,9 @@ if ${UPDATE_MODE}; then
         exit 1
     fi
 
-    # Upload specs to stage
+    # Upload specs to stage (with .env substitution)
     echo "=== Uploading specs to @PREFECT_SPECS ==="
-    snow stage copy "$PROJECT_DIR/specs/" @PREFECT_DB.PREFECT_SCHEMA.PREFECT_SPECS/ \
-        --overwrite --connection "$CONN"
+    upload_specs
     echo ""
 
     # ALTER SERVICE for all long-running services
@@ -137,10 +164,9 @@ else
         echo ""
     fi
 
-    # Upload specs to stage first
+    # Upload specs to stage (with .env substitution)
     echo "=== Uploading specs to @PREFECT_SPECS ==="
-    snow stage copy "$PROJECT_DIR/specs/" @PREFECT_DB.PREFECT_SCHEMA.PREFECT_SPECS/ \
-        --overwrite --connection "$CONN"
+    upload_specs
     echo ""
 
     echo "=== Running SQL setup scripts ==="
