@@ -1,0 +1,324 @@
+# =============================================================================
+# GitHub Actions CI/CD for Prefect SPCS
+#
+# Jobs:
+#   lint    — ruff check + format on every push/PR
+#   test    — pytest + coverage on every push/PR
+#   diff    — deployment diff on PRs (informational)
+#   build   — build & push Docker images to SPCS registry (main only)
+#   deploy  — sync flows + specs + register deployments (main, manual)
+#   e2e     — end-to-end tests against live SPCS (scheduled/manual)
+#
+# Required GitHub Secrets (Settings > Secrets and variables > Actions):
+#   DOCKERHUB_USER       — Docker Hub username (avoids pull rate limits)
+#   DOCKERHUB_TOKEN      — Docker Hub access token
+#   SNOWFLAKE_ACCOUNT    — e.g. "YOUR_ORG-YOUR_ACCOUNT"
+#   SNOWFLAKE_USER       — e.g. "YOUR_USER"
+#   SNOWFLAKE_PAT        — Snowflake Programmatic Access Token
+#   PREFECT_API_URL      — e.g. "https://<endpoint>/api"
+#   GIT_REPO_URL         — this repo's HTTPS clone URL
+#   GIT_ACCESS_TOKEN     — GitHub personal access token (repo scope)
+#   PREFECT_ENV          — (optional) "dev", "staging", "prod"
+# =============================================================================
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * *"  # nightly E2E at 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      run_e2e:
+        description: "Run E2E tests"
+        type: boolean
+        default: false
+      run_deploy:
+        description: "Run deploy job"
+        type: boolean
+        default: false
+
+env:
+  PYTHON_VERSION: "3.12"
+  UV_CACHE_DIR: .uv-cache
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Lint — ruff check + format
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install ruff --quiet
+      - run: ruff check flows/ scripts/ tests/
+      - run: ruff format flows/ scripts/ tests/ --check
+
+  # ---------------------------------------------------------------------------
+  # Test — pytest + coverage
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        run: pip install uv --quiet
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.UV_CACHE_DIR }}
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Validate FlowSpec registry
+        run: uv run python flows/deploy.py --validate
+
+      - name: Run tests
+        run: |
+          uv run pytest tests/ \
+            --ignore=tests/test_e2e_hybrid.py \
+            --ignore=tests/test_e2e_spcs.py \
+            -q \
+            --cov=flows --cov=scripts \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --junitxml=report.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            report.xml
+            coverage.xml
+
+  # ---------------------------------------------------------------------------
+  # Diff — deployment diff on PRs (informational)
+  # ---------------------------------------------------------------------------
+  diff:
+    name: Deployment Diff
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        run: pip install uv --quiet
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.UV_CACHE_DIR }}
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Show deployment diff
+        if: ${{ secrets.SNOWFLAKE_PAT != '' }}
+        continue-on-error: true
+        env:
+          PREFECT_API_URL: ${{ secrets.PREFECT_API_URL }}
+          PREFECT_CLIENT_CUSTOM_HEADERS: '{"Authorization": "Snowflake Token=\"${{ secrets.SNOWFLAKE_PAT }}\""}'
+          PREFECT_ENV: ${{ secrets.PREFECT_ENV }}
+          GIT_REPO_URL: ${{ secrets.GIT_REPO_URL }}
+          GIT_BRANCH: ${{ github.head_ref }}
+        run: uv run python flows/deploy.py --diff --all
+
+  # ---------------------------------------------------------------------------
+  # Build — Docker images → SPCS registry (main only)
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        if: ${{ secrets.DOCKERHUB_USER != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install Snow CLI
+        if: ${{ secrets.SNOWFLAKE_PAT != '' }}
+        run: pip install "snowflake-cli-labs>=3.0,<4" --quiet
+
+      - name: Configure Snowflake connection
+        if: ${{ secrets.SNOWFLAKE_PAT != '' }}
+        run: |
+          mkdir -p ~/.snowflake
+          cat > ~/.snowflake/connections.toml << 'TOML'
+          [ci]
+          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
+          user = "${{ secrets.SNOWFLAKE_USER }}"
+          authenticator = "programmatic_access_token"
+          token = "${{ secrets.SNOWFLAKE_PAT }}"
+          role = "PREFECT_ROLE"
+          database = "PREFECT_DB"
+          schema = "PREFECT_SCHEMA"
+          warehouse = "PREFECT_WH"
+          TOML
+          chmod 0600 ~/.snowflake/connections.toml
+
+      - name: Login to SPCS registry
+        if: ${{ secrets.SNOWFLAKE_PAT != '' }}
+        run: snow spcs image-registry login --connection ci
+
+      - name: Build and push images
+        if: ${{ secrets.SNOWFLAKE_PAT != '' }}
+        run: bash scripts/build_and_push.sh --connection ci
+
+  # ---------------------------------------------------------------------------
+  # Deploy — sync specs + flows + register deployments (manual)
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    if: >
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run_deploy == 'true')
+    needs: [build]
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install tools
+        run: |
+          pip install uv "snowflake-cli-labs>=3.0,<4" --quiet
+          uv sync
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.UV_CACHE_DIR }}
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+
+      - name: Configure Snowflake connection
+        run: |
+          mkdir -p ~/.snowflake
+          cat > ~/.snowflake/connections.toml << 'TOML'
+          [ci]
+          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
+          user = "${{ secrets.SNOWFLAKE_USER }}"
+          authenticator = "programmatic_access_token"
+          token = "${{ secrets.SNOWFLAKE_PAT }}"
+          role = "PREFECT_ROLE"
+          database = "PREFECT_DB"
+          schema = "PREFECT_SCHEMA"
+          warehouse = "PREFECT_WH"
+          TOML
+          chmod 0600 ~/.snowflake/connections.toml
+
+      - name: Upload specs to stage
+        run: snow stage copy specs/ @PREFECT_DB.PREFECT_SCHEMA.PREFECT_SPECS/ --overwrite --connection ci
+
+      - name: Sync flows to stage
+        run: bash scripts/sync_flows.sh --connection ci
+
+      - name: Show deployment diff
+        env:
+          PREFECT_API_URL: ${{ secrets.PREFECT_API_URL }}
+          PREFECT_CLIENT_CUSTOM_HEADERS: '{"Authorization": "Snowflake Token=\"${{ secrets.SNOWFLAKE_PAT }}\""}'
+          PREFECT_ENV: ${{ secrets.PREFECT_ENV }}
+          GIT_REPO_URL: ${{ secrets.GIT_REPO_URL }}
+          GIT_BRANCH: main
+        run: uv run python flows/deploy.py --diff --all
+
+      - name: Register deployments
+        env:
+          PREFECT_API_URL: ${{ secrets.PREFECT_API_URL }}
+          PREFECT_CLIENT_CUSTOM_HEADERS: '{"Authorization": "Snowflake Token=\"${{ secrets.SNOWFLAKE_PAT }}\""}'
+          PREFECT_ENV: ${{ secrets.PREFECT_ENV }}
+          GIT_REPO_URL: ${{ secrets.GIT_REPO_URL }}
+          GIT_BRANCH: main
+          GIT_ACCESS_TOKEN: ${{ secrets.GIT_ACCESS_TOKEN }}
+        run: uv run python flows/deploy.py --all
+
+      - name: Setup automations
+        env:
+          PREFECT_API_URL: ${{ secrets.PREFECT_API_URL }}
+          PREFECT_CLIENT_CUSTOM_HEADERS: '{"Authorization": "Snowflake Token=\"${{ secrets.SNOWFLAKE_PAT }}\""}'
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' || secrets.ALERT_WEBHOOK_URL != '' }}
+        run: uv run python scripts/setup_automations.py
+
+  # ---------------------------------------------------------------------------
+  # E2E — live infrastructure tests (scheduled nightly or manual)
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'schedule') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run_e2e == 'true')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        run: pip install uv --quiet
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.UV_CACHE_DIR }}
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run E2E tests
+        if: ${{ secrets.SNOWFLAKE_PAT != '' }}
+        env:
+          PREFECT_SPCS_API_URL: ${{ secrets.PREFECT_SPCS_API_URL }}
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PAT: ${{ secrets.SNOWFLAKE_PAT }}
+        run: |
+          uv run pytest tests/test_e2e_spcs.py tests/test_e2e_hybrid.py \
+            -v -m e2e -o "addopts=" \
+            --junitxml=report-e2e.xml
+
+      - name: Upload E2E results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: report-e2e.xml
