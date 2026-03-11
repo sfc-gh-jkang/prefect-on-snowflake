@@ -13,6 +13,7 @@ def say_hello(name: str) -> str:
 @flow(name="example-flow", log_prints=True)
 def example_flow(name: str = "World"):
     """Simple flow that greets and returns a message."""
+    print("GIT_CLONE_TEST_MARKER_2026_03_11_v1")
     result = say_hello(name)
     return result
 
