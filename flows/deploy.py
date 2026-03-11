@@ -364,8 +364,8 @@ FLOW_REGISTRY = [
         func="alert_test_flow",
         name="alert-test",
         tags=["test", "alerting"],
-        description="Deliberately fails to validate alert pipeline end-to-end",
-        parameters={"should_fail": True},
+        description="Optionally fails to validate alert pipeline end-to-end (pass should_fail=true to trigger)",
+        parameters={"should_fail": False},
     ),
     FlowSpec(
         path="data_quality_flow.py",
