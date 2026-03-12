@@ -57,19 +57,19 @@ def get_connection() -> snowflake.connector.SnowflakeConnection:
 
 
 def fetch_logs(conn: snowflake.connector.SnowflakeConnection) -> list[dict]:
-    """Query recent logs from the SPCS_EVENT_LOGS wrapper view."""
+    """Query recent logs from the Snowflake event table."""
     global _last_timestamp
     services_list = ",".join(f"'{s}'" for s in SERVICES_FILTER)
 
     query = f"""
         SELECT
             TIMESTAMP::VARCHAR AS ts,
-            RESOURCE_ATTRIBUTES:"snow.service.name"::VARCHAR AS service_name,
-            RESOURCE_ATTRIBUTES:"snow.service.container.name"::VARCHAR AS container_name,
-            RECORD:"severity_text"::VARCHAR AS severity,
-            VALUE::VARCHAR AS message
-        FROM PREFECT_DB.PREFECT_SCHEMA.SPCS_EVENT_LOGS
-        WHERE RESOURCE_ATTRIBUTES:"snow.service.name"::VARCHAR IN ({services_list})
+            SERVICE_NAME,
+            CONTAINER_NAME,
+            SEVERITY,
+            MESSAGE
+        FROM PREFECT_DB.PREFECT_SCHEMA.SPCS_EVENT_LOGS_TABLE
+        WHERE SERVICE_NAME IN ({services_list})
     """
     if _last_timestamp:
         query += f"  AND TIMESTAMP > '{_last_timestamp}'::TIMESTAMP_LTZ\n"
