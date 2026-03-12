@@ -121,6 +121,7 @@ def get_snowflake_connection(query_tag: str | None = None):
         warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE", "COMPUTE_WH"),
         database=os.environ.get("SNOWFLAKE_DATABASE", "PREFECT_DB"),
         schema=os.environ.get("SNOWFLAKE_SCHEMA", "PREFECT_SCHEMA"),
+        role=os.environ.get("SNOWFLAKE_ROLE", "ACCOUNTADMIN"),
         session_parameters={"QUERY_TAG": tag},
     )
 
