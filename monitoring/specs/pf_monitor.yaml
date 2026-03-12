@@ -50,7 +50,7 @@ spec:
         GF_AUTH_ANONYMOUS_ENABLED: "true"
         GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
         GF_USERS_ALLOW_SIGN_UP: "false"
-        GF_ALERTING_ENABLED: "true"
+        GF_ALERTING_ENABLED: "false"
         GF_UNIFIED_ALERTING_ENABLED: "true"
         GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /opt/grafana/dashboards/health.json
         GF_ALERTING_WEBHOOK_URL: "https://hooks.example.com/placeholder"
@@ -122,7 +122,7 @@ spec:
     # Connects to the external Postgres instance used by Prefect server.
     # The DSN secret must use standard postgresql:// (not +asyncpg).
     - name: postgres-exporter
-      image: /prefect_db/prefect_schema/prefect_repository/postgres_exporter:v0.16.0
+      image: /prefect_db/prefect_schema/prefect_repository/postgres_exporter:v0.19.1
       resources:
         requests:
           cpu: 0.1

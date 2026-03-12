@@ -40,7 +40,7 @@ ruler:
     local:
       directory: /etc/loki/rules
   rule_path: /loki/rules-tmp
-  alertmanager_url: http://localhost:3000/grafana/api/alertmanager
+  alertmanager_url: ""
   ring:
     kvstore:
       store: inmemory
