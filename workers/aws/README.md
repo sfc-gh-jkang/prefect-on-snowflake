@@ -105,7 +105,7 @@ export SNOWFLAKE_ACCOUNT="<ORGNAME-ACCTNAME>"
 export SNOWFLAKE_USER="PREFECT_SVC"
 
 # Optional overrides for the setup script:
-export AWS_INSTANCE_NAME="jkang-prefect-worker-<pool-name>"
+export AWS_INSTANCE_NAME="<your-prefix>-prefect-worker-<pool-name>"
 # Override the pool name in docker-compose if different from aws-pool:
 # (see step 6)
 ```
@@ -136,7 +136,7 @@ aws ssm send-command \
   --document-name AWS-RunShellScript \
   --parameters 'commands=["cd /opt/prefect-aws && sed -i \"s/--pool aws-pool/--pool aws-pool-backup/\" docker-compose.aws.yaml && docker compose -f docker-compose.aws.yaml up -d"]' \
   --region us-west-2 \
-  --profile 484577546576_Contributor
+  --profile <AWS_PROFILE>
 ```
 
 ### 7. Launch the EC2 instance
@@ -166,7 +166,7 @@ aws ssm send-command \
   --document-name AWS-RunShellScript \
   --parameters 'commands=["cat /var/log/prefect-setup.log"]' \
   --region us-west-2 \
-  --profile 484577546576_Contributor
+  --profile <AWS_PROFILE>
 
 # Check docker container status
 aws ssm send-command \
@@ -174,7 +174,7 @@ aws ssm send-command \
   --document-name AWS-RunShellScript \
   --parameters 'commands=["cd /opt/prefect-aws && docker compose -f docker-compose.aws.yaml ps"]' \
   --region us-west-2 \
-  --profile 484577546576_Contributor
+  --profile <AWS_PROFILE>
 
 # Check worker logs
 aws ssm send-command \
@@ -182,7 +182,7 @@ aws ssm send-command \
   --document-name AWS-RunShellScript \
   --parameters 'commands=["cd /opt/prefect-aws && docker compose -f docker-compose.aws.yaml logs --tail 30"]' \
   --region us-west-2 \
-  --profile 484577546576_Contributor
+  --profile <AWS_PROFILE>
 ```
 
 To read SSM command output:
@@ -192,7 +192,7 @@ aws ssm get-command-invocation \
   --command-id <command-id> \
   --instance-id <instance-id> \
   --region us-west-2 \
-  --profile 484577546576_Contributor
+  --profile <AWS_PROFILE>
 ```
 
 ### 9. Test with a flow run
@@ -212,7 +212,7 @@ Check in the Prefect UI that the run completes successfully.
 aws ec2 terminate-instances \
   --instance-ids <instance-id> \
   --region us-west-2 \
-  --profile 484577546576_Contributor
+  --profile <AWS_PROFILE>
 ```
 
 Optionally delete the work pool:
@@ -259,7 +259,7 @@ No SSH key needed. Drops you into a root shell immediately:
 aws ssm start-session \
   --target <instance-id> \
   --region us-west-2 \
-  --profile 484577546576_Contributor
+  --profile <AWS_PROFILE>
 ```
 
 Once in the shell, check worker status:
@@ -282,7 +282,7 @@ COMMAND_ID=$(aws ssm send-command \
   --document-name "AWS-RunShellScript" \
   --parameters '{"commands":["docker ps","cd /opt/prefect-aws && docker compose -f docker-compose.aws.yaml logs --tail 10"]}' \
   --region us-west-2 \
-  --profile 484577546576_Contributor \
+  --profile <AWS_PROFILE> \
   --query 'Command.CommandId' \
   --output text)
 
@@ -291,7 +291,7 @@ aws ssm get-command-invocation \
   --command-id "$COMMAND_ID" \
   --instance-id <instance-id> \
   --region us-west-2 \
-  --profile 484577546576_Contributor
+  --profile <AWS_PROFILE>
 ```
 
 > **Note:** Avoid Go template syntax (`{{.Names}}`) in SSM commands — the braces
@@ -308,19 +308,19 @@ aws ssm start-session \
   --document-name AWS-StartPortForwardingSession \
   --parameters '{"portNumber":["22"],"localPortNumber":["2222"]}' \
   --region us-west-2 \
-  --profile 484577546576_Contributor
+  --profile <AWS_PROFILE>
 
 # Terminal 2: SSH through the tunnel
-chmod 600 workers/aws/jkang-prefect.pem
-ssh -p 2222 -i workers/aws/jkang-prefect.pem ec2-user@localhost
+chmod 600 workers/aws/<YOUR_KEY_NAME>.pem
+ssh -p 2222 -i workers/aws/<YOUR_KEY_NAME>.pem ec2-user@localhost
 ```
 
 ### Running Instances
 
 | Pool | Instance ID | Private IP | Name Tag | Schedule Tag |
 |------|-------------|------------|----------|-------------|
-| `aws-pool` | `i-0f8147b3dc8c95ab8` | `172.29.18.60` | `jkang-prefect-worker-aws` | `running` |
-| `aws-pool-backup` | `i-0bf82016e0481f15a` | `172.29.18.107` | `jkang-prefect-worker-aws-backup` | `running` |
+| `aws-pool` | `<PRIMARY_INSTANCE_ID>` | `<PRIMARY_PRIVATE_IP>` | `<YOUR_PREFIX>-prefect-worker-aws` | `running` |
+| `aws-pool-backup` | `<BACKUP_INSTANCE_ID>` | `<BACKUP_PRIVATE_IP>` | `<YOUR_PREFIX>-prefect-worker-aws-backup` | `running` |
 
 Each instance runs 7 Docker containers:
 - `prefect-aws-prefect-worker-aws-1` — Prefect ProcessWorker polling its pool
@@ -343,37 +343,37 @@ These instances are on private subnets with no public IP. Use SSM (not SSH) to c
 ```bash
 # Check Docker containers on primary worker
 CMDID=$(aws ssm send-command \
-  --instance-ids i-0f8147b3dc8c95ab8 \
+  --instance-ids <PRIMARY_INSTANCE_ID> \
   --document-name "AWS-RunShellScript" \
   --parameters '{"commands":["docker ps"]}' \
   --region us-west-2 \
-  --profile 484577546576_Contributor \
+  --profile <AWS_PROFILE> \
   --query 'Command.CommandId' --output text)
 sleep 5
 aws ssm get-command-invocation \
   --command-id "$CMDID" \
-  --instance-id i-0f8147b3dc8c95ab8 \
+  --instance-id <PRIMARY_INSTANCE_ID> \
   --region us-west-2 \
-  --profile 484577546576_Contributor \
+  --profile <AWS_PROFILE> \
   --query 'StandardOutputContent' --output text
 
 # Check SSM agent status for both instances
 aws ssm describe-instance-information \
-  --filters "Key=InstanceIds,Values=i-0f8147b3dc8c95ab8,i-0bf82016e0481f15a" \
+  --filters "Key=InstanceIds,Values=<PRIMARY_INSTANCE_ID>,<BACKUP_INSTANCE_ID>" \
   --query "InstanceInformationList[].[InstanceId,PingStatus,IPAddress]" \
-  --region us-west-2 --profile 484577546576_Contributor --output table
+  --region us-west-2 --profile <AWS_PROFILE> --output table
 ```
 
 ## AWS Environment Details
 
 | Resource | Value |
 |----------|-------|
-| Account | `484577546576` |
-| Profile | `484577546576_Contributor` |
+| Account | `<AWS_ACCOUNT_ID>` |
+| Profile | `<AWS_PROFILE>` |
 | Region | **`us-west-2`** (not us-east-1 — see note above) |
-| VPC | `vpc-0f2c242cf1c3f2b33` |
-| Subnet | `subnet-0d12daa0dbed911a8` (private, us-west-2a) |
-| Security Group | `sg-060546bc5f6720f4f` |
+| VPC | `<VPC_ID>` |
+| Subnet | `<SUBNET_ID>` (private, us-west-2a) |
+| Security Group | `<SECURITY_GROUP_ID>` |
 | Instance Type | `t3.small` |
 | AMI | Amazon Linux 2023 (full, not minimal) |
 | VPC DNS Resolver | `169.254.169.253` |
