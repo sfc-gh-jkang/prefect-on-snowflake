@@ -7,6 +7,9 @@ server:
   http_listen_port: 3100
   log_level: warn
 
+tracing:
+  enabled: false
+
 common:
   path_prefix: /loki
   storage:
@@ -40,6 +43,9 @@ ruler:
     local:
       directory: /etc/loki/rules
   rule_path: /loki/rules-tmp
+  # alertmanager_url disabled (empty) — Grafana's unified alerting AM API
+  # returns 400 Bad Request for Loki-generated alerts. Loki ruler still
+  # evaluates rules locally; Grafana queries state via /loki/api/v1/rules.
   alertmanager_url: ""
   ring:
     kvstore:

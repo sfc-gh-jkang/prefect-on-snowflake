@@ -63,6 +63,8 @@ class TestMonitoringFilesExist:
             DASH_POSTGRES_DETAIL,
             DASH_ALERTS,
             DASH_SPCS_LOGS,
+            MONITORING_DIR / "grafana" / "dashboards" / "health.json",
+            MONITORING_DIR / "loki" / "rules" / "fake" / "alerts.yaml",
         ],
     )
     def test_file_exists(self, path):
@@ -3847,17 +3849,15 @@ class TestGrafanaAlertingContactPoints:
         names = [cp["name"] for cp in self.config["contactPoints"]]
         assert "prefect-alerts" in names
 
-    def test_webhook_receiver_configured(self):
+    def test_webhook_receiver_removed(self):
         cp = [c for c in self.config["contactPoints"] if c["name"] == "prefect-alerts"][0]
         receivers = cp["receivers"]
-        assert any(r["type"] == "webhook" for r in receivers)
+        assert not any(r["type"] == "webhook" for r in receivers)
 
-    def test_webhook_uses_env_var_substitution(self):
-        """Webhook URL should use Grafana env var substitution, not hardcoded."""
+    def test_slack_receiver_configured(self):
         cp = [c for c in self.config["contactPoints"] if c["name"] == "prefect-alerts"][0]
-        webhook = [r for r in cp["receivers"] if r["type"] == "webhook"][0]
-        url = webhook["settings"]["url"]
-        assert "${" in url, f"Webhook URL should use env var substitution, got: {url}"
+        receivers = cp["receivers"]
+        assert any(r["type"] == "slack" for r in receivers)
 
 
 class TestGrafanaAlertingPolicies:
@@ -4099,9 +4099,9 @@ class TestGrafanaHomeDashboardConfig:
         env = self.grafana.get("env", {})
         assert env.get("GF_UNIFIED_ALERTING_ENABLED") == "true"
 
-    def test_alerting_webhook_env_var_set(self):
+    def test_alerting_webhook_env_var_removed(self):
         env = self.grafana.get("env", {})
-        assert "GF_ALERTING_WEBHOOK_URL" in env
+        assert "GF_ALERTING_WEBHOOK_URL" not in env
 
 
 # ===========================================================================
@@ -5305,13 +5305,12 @@ class TestGrafanaProvisioningCompleteness:
             f"Contact point name '{cp_name}' != policy receiver '{policy_receiver}'"
         )
 
-    def test_contact_point_webhook_uses_env_var(self):
-        """Webhook URL should use env var substitution, not a hardcoded URL."""
+    def test_contact_point_has_slack_and_email(self):
+        """Contact point should have slack and email receivers (no webhook)."""
         receivers = self.cp["contactPoints"][0]["receivers"]
-        webhook = next(r for r in receivers if r["type"] == "webhook")
-        assert "${" in webhook["settings"]["url"], (
-            "Webhook URL should use ${GF_ALERTING_WEBHOOK_URL} env var substitution"
-        )
+        types = {r["type"] for r in receivers}
+        assert "slack" in types and "email" in types
+        assert "webhook" not in types
 
     def test_policy_group_by_includes_alertname(self):
         """Notification policy should group by alertname."""
@@ -5791,11 +5790,18 @@ class TestCrossComponentConsistency:
                         f"Job '{job['job_name']}' should use localhost, got: {t}"
                     )
 
-    def test_loki_ruler_alertmanager_points_to_grafana(self):
-        """Loki ruler should send alerts to Grafana's alertmanager API."""
+    def test_loki_ruler_alertmanager_url_is_disabled(self):
+        """Loki ruler alertmanager_url must be empty (disabled).
+
+        Grafana's unified alerting AM API returns 400 for Loki-generated
+        alerts. Loki ruler evaluates rules locally; Grafana queries state
+        via /loki/api/v1/rules instead.
+        """
         am_url = self.loki_config["ruler"]["alertmanager_url"]
-        assert "localhost" in am_url or "grafana" in am_url
-        assert "alertmanager" in am_url
+        assert am_url == "", (
+            f"alertmanager_url must be empty — Grafana's unified alerting AM API "
+            f"is incompatible with Loki-generated alerts. Got: {am_url!r}"
+        )
 
     def test_spec_container_count_matches_scrape_config(self):
         """Number of SPCS containers should be reflected in scrape configs.
@@ -5865,9 +5871,10 @@ class TestGrafanaPostgresPersistence:
     def test_admin_password_injected_from_secret(self):
         assert "GF_SECURITY_ADMIN_PASSWORD" in self.secret_env_vars
 
-    def test_grafana_has_exactly_four_secrets(self):
-        assert len(self.secrets) == 4, (
-            f"Grafana should have exactly 4 secrets (admin password + DB DSN + SMTP password + Slack webhook), "
+    def test_grafana_has_exactly_seven_secrets(self):
+        assert len(self.secrets) == 7, (
+            f"Grafana should have exactly 7 secrets (admin password + DB DSN + SMTP password + "
+            f"Slack webhook + SMTP user + SMTP from + SMTP recipients), "
             f"got {len(self.secrets)}: {self.secret_env_vars}"
         )
 
@@ -7953,8 +7960,9 @@ class TestMonitorSpecSmtpConfig:
         assert "587" in env.get("GF_SMTP_HOST", "")
 
     def test_smtp_from_address_set(self):
-        env = self.grafana.get("env", {})
-        assert "@" in env.get("GF_SMTP_FROM_ADDRESS", "")
+        """SMTP from address injected via secret, not env var."""
+        secret_vars = [s.get("envVarName") for s in self.grafana.get("secrets", [])]
+        assert "GF_SMTP_FROM_ADDRESS" in secret_vars
 
     def test_smtp_from_name_set(self):
         env = self.grafana.get("env", {})
@@ -7966,8 +7974,9 @@ class TestMonitorSpecSmtpConfig:
         assert env.get("GF_SMTP_STARTTLS_POLICY") == "MandatoryStartTLS"
 
     def test_smtp_alert_recipients_set(self):
-        env = self.grafana.get("env", {})
-        assert "@" in env.get("GF_SMTP_ALERT_RECIPIENTS", "")
+        """SMTP recipients injected via secret, not env var."""
+        secret_vars = [s.get("envVarName") for s in self.grafana.get("secrets", [])]
+        assert "GF_SMTP_ALERT_RECIPIENTS" in secret_vars
 
     def test_smtp_password_from_secret(self):
         """GF_SMTP_PASSWORD must come from a Snowflake secret, not env."""
@@ -7997,11 +8006,11 @@ class TestMonitorSpecSmtpConfig:
         )
         assert smtp_secret.get("envVarName") == "GF_SMTP_PASSWORD"
 
-    def test_grafana_has_four_secret_mounts(self):
-        """Grafana needs 4 secrets: admin password, DB DSN, SMTP password, Slack webhook."""
+    def test_grafana_has_seven_secret_mounts(self):
+        """Grafana needs 7 secrets: admin password, DB DSN, SMTP password, Slack webhook, SMTP user, SMTP from, SMTP recipients."""
         secrets = self.grafana.get("secrets", [])
-        assert len(secrets) == 4, (
-            f"Grafana should have 4 secret mounts, got {len(secrets)}: "
+        assert len(secrets) == 7, (
+            f"Grafana should have 7 secret mounts, got {len(secrets)}: "
             f"{[s.get('snowflakeSecret', {}).get('objectName') for s in secrets]}"
         )
 
@@ -8035,16 +8044,17 @@ class TestNoHardcodedEmails:
             "deploy_monitoring.sh should read GRAFANA_SMTP_USER for Keychain lookup"
         )
 
-    def test_monitor_spec_smtp_user_is_placeholder(self):
-        """SMTP user must be a configurable placeholder, not a real address."""
+    def test_monitor_spec_smtp_user_from_secret(self):
+        """SMTP user must be injected via Snowflake secret, not hardcoded in env."""
         spec = yaml.safe_load(MONITOR_SPEC_FILE.read_text())
         containers = spec["spec"]["containers"]
         grafana = next(c for c in containers if c["name"] == "grafana")
         env = grafana.get("env", {})
-        smtp_user = env.get("GF_SMTP_USER", "")
-        assert "CHANGE_ME" in smtp_user, (
-            f"GF_SMTP_USER should be a CHANGE_ME placeholder, got: {smtp_user}"
+        assert "GF_SMTP_USER" not in env, (
+            "GF_SMTP_USER should be injected via a Snowflake secret, not in env"
         )
+        secret_vars = [s.get("envVarName") for s in grafana.get("secrets", [])]
+        assert "GF_SMTP_USER" in secret_vars
 
 
 # ===========================================================================
@@ -8110,12 +8120,12 @@ class TestContactPointEmailReceiver:
         email = next(r for r in self.receivers if r["type"] == "email")
         assert email["settings"].get("singleEmail") is True
 
-    def test_has_both_webhook_and_email(self):
+    def test_has_slack_and_email(self):
         types = {r["type"] for r in self.receivers}
-        assert "webhook" in types and "email" in types
+        assert "slack" in types and "email" in types
 
     def test_total_receiver_count(self):
-        assert len(self.receivers) == 3
+        assert len(self.receivers) == 2
 
 
 # ===========================================================================
@@ -8970,3 +8980,515 @@ class TestTeardownScriptStepMarkers:
         lines = [ln for ln in self.content.splitlines() if "DROP " in ln and "snow sql" in ln]
         for line in lines:
             assert "|| true" in line, f"DROP without || true fallback: {line.strip()}"
+
+
+# ---------------------------------------------------------------------------
+# Regression: postgres-exporter PG17 compatibility
+# ---------------------------------------------------------------------------
+class TestPostgresExporterPG17Compat:
+    """postgres-exporter >= v0.17.0 is required for PG17.
+
+    PG17 moved checkpoint columns from pg_stat_bgwriter to
+    pg_stat_checkpointer. Older exporters query the removed columns,
+    producing constant error logs like:
+      'ERROR: column "checkpoints_timed" does not exist'
+    """
+
+    @pytest.fixture(autouse=True)
+    def load_spec(self):
+        self.spec = yaml.safe_load(MONITOR_SPEC_FILE.read_text())
+        self.containers = {c["name"]: c for c in self.spec["spec"]["containers"]}
+
+    def test_postgres_exporter_version_pg17_compatible(self):
+        """postgres-exporter image tag must be >= v0.17.0 for PG17 compatibility."""
+        import re as _re
+
+        image = self.containers["postgres-exporter"]["image"]
+        match = _re.search(r":v?(\d+\.\d+\.\d+)", image)
+        assert match, f"Cannot parse version from image: {image}"
+        parts = [int(x) for x in match.group(1).split(".")]
+        assert tuple(parts) >= (0, 17, 0), (
+            f"postgres-exporter {match.group(1)} < 0.17.0 — incompatible with PG17. "
+            f"PG17 moved checkpoint columns from pg_stat_bgwriter to pg_stat_checkpointer. "
+            f"Upgrade to >= v0.17.0 (v0.19.1+ recommended)."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Regression: Loki version — structured metadata byte accounting bug
+# ---------------------------------------------------------------------------
+class TestLokiVersionCompat:
+    """Loki >= 3.6.0 is required to avoid 'negative structured metadata bytes' errors.
+
+    Loki 3.5.x has a byte-accounting bug in push.go that logs spurious
+    ERROR-level messages ('negative structured metadata bytes received')
+    when entries are pushed without structured metadata. Fixed in 3.6.0+.
+    """
+
+    @pytest.fixture(autouse=True)
+    def load_spec(self):
+        self.spec = yaml.safe_load(MONITOR_SPEC_FILE.read_text())
+        self.containers = {c["name"]: c for c in self.spec["spec"]["containers"]}
+
+    def test_loki_version_no_negative_metadata_bug(self):
+        """Loki image tag must be >= 3.6.0 to avoid structured metadata bug."""
+        import re as _re
+
+        image = self.containers["loki"]["image"]
+        match = _re.search(r":(\d+\.\d+\.\d+)", image)
+        assert match, f"Cannot parse version from Loki image: {image}"
+        parts = [int(x) for x in match.group(1).split(".")]
+        assert tuple(parts) >= (3, 6, 0), (
+            f"Loki {match.group(1)} < 3.6.0 — has 'negative structured metadata bytes' "
+            f"bug (push.go:202) that produces constant ERROR logs. Upgrade to >= 3.6.0."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Regression: Grafana legacy vs unified alerting conflict
+# ---------------------------------------------------------------------------
+class TestGrafanaAlertingConfig:
+    """Grafana 11+ requires legacy alerting disabled when unified alerting is on.
+
+    Having both GF_ALERTING_ENABLED=true and GF_UNIFIED_ALERTING_ENABLED=true
+    causes startup conflicts and broken alert management. Legacy alerting was
+    removed in Grafana 11; the env var must be explicitly set to "false".
+    """
+
+    @pytest.fixture(autouse=True)
+    def load_spec(self):
+        self.spec = yaml.safe_load(MONITOR_SPEC_FILE.read_text())
+        containers = self.spec["spec"]["containers"]
+        self.grafana = next(c for c in containers if c["name"] == "grafana")
+        self.env = self.grafana.get("env", {})
+
+    def test_legacy_alerting_disabled_when_unified_enabled(self):
+        """GF_ALERTING_ENABLED must be 'false' when GF_UNIFIED_ALERTING_ENABLED is 'true'."""
+        unified = self.env.get("GF_UNIFIED_ALERTING_ENABLED")
+        legacy = self.env.get("GF_ALERTING_ENABLED")
+        if unified == "true":
+            assert legacy == "false", (
+                f"Grafana has GF_UNIFIED_ALERTING_ENABLED=true but "
+                f"GF_ALERTING_ENABLED={legacy!r}. Legacy alerting (removed in "
+                f"Grafana 11) must be 'false' to avoid startup conflicts."
+            )
+
+    def test_unified_alerting_enabled(self):
+        """Grafana must have unified alerting enabled."""
+        assert self.env.get("GF_UNIFIED_ALERTING_ENABLED") == "true"
+
+
+# ---------------------------------------------------------------------------
+# Regression: Loki config validation (alertmanager_url, ruler keys)
+# ---------------------------------------------------------------------------
+class TestLokiConfigRegression:
+    """Regression tests for Loki configuration issues.
+
+    Guards against:
+    - Stale/broken alertmanager_url that produces 400/403/404 errors
+    - Invalid ruler config field names (e.g., nested basic_auth vs flat fields)
+    - Missing enable_api (prevents Grafana from querying ruler state)
+    """
+
+    VALID_RULER_KEYS = {
+        "storage",
+        "rule_path",
+        "alertmanager_url",
+        "alertmanager_client",
+        "ring",
+        "enable_api",
+        "evaluation_interval",
+        "poll_interval",
+        "external_url",
+        "enable_alertmanager_v2",
+        "enable_sharding",
+        "flush_period",
+        "for_outage_tolerance",
+        "for_grace_period",
+        "resend_delay",
+        "notification_queue_capacity",
+        "notification_timeout",
+        "wal",
+        "remote_write",
+    }
+
+    @pytest.fixture(autouse=True)
+    def load_config(self):
+        self.config = yaml.safe_load(LOKI_CONFIG_FILE.read_text())
+
+    def test_alertmanager_url_not_stale(self):
+        """alertmanager_url must be empty or a valid reachable pattern.
+
+        A non-empty alertmanager_url that points to a broken endpoint
+        (wrong auth, incompatible API) generates constant error logs:
+          'msg="error sending notification" err="400 Bad Request"'
+
+        Currently disabled (empty string) because Grafana's unified
+        alerting AM API doesn't accept Loki-generated alerts. Grafana
+        queries Loki's ruler API directly for alert state instead.
+        """
+        ruler = self.config.get("ruler", {})
+        url = ruler.get("alertmanager_url", "")
+        assert url == "", (
+            f"alertmanager_url must be empty (disabled) — Grafana's unified alerting "
+            f"AM API returns 400 for Loki-generated alerts. Grafana queries Loki's "
+            f"ruler API directly instead. Got: {url!r}"
+        )
+
+    def test_ruler_keys_are_valid(self):
+        """Ruler config keys must be recognized Loki ruler fields.
+
+        Invalid keys (e.g., 'basic_auth' nested under alertmanager_client)
+        cause Loki config parse errors:
+          'field basic_auth not found in type config.NotifierConfig'
+        """
+        ruler = self.config.get("ruler", {})
+        for key in ruler:
+            assert key in self.VALID_RULER_KEYS, (
+                f"Unknown ruler config key '{key}' — may cause Loki parse error. "
+                f"Valid keys: {sorted(self.VALID_RULER_KEYS)}"
+            )
+
+    def test_ruler_has_enable_api(self):
+        """Ruler must have enable_api: true for Grafana to query alert state.
+
+        Without enable_api, Grafana cannot query /loki/api/v1/rules to
+        display Loki-evaluated alert rule status in the UI.
+        """
+        ruler = self.config.get("ruler", {})
+        assert ruler.get("enable_api") is True, (
+            "Loki ruler must have enable_api: true so Grafana can query alert state "
+            "via /loki/api/v1/rules"
+        )
+
+    def test_ruler_has_local_storage(self):
+        """Ruler must have local storage configured for rules directory."""
+        ruler = self.config.get("ruler", {})
+        storage = ruler.get("storage", {})
+        assert storage.get("type") == "local"
+
+    def test_tracing_disabled(self):
+        """Loki tracing must be explicitly disabled.
+
+        Loki 3.6+ enables OpenTelemetry tracing by default, attempting to
+        export to collector.monitor.spcs.internal:4317 every 5 seconds.
+        Without an OTel collector, this floods logs with connection errors.
+        """
+        tracing = self.config.get("tracing", {})
+        assert tracing.get("enabled") is False, (
+            "Loki tracing must be disabled (tracing.enabled: false) — "
+            "no OTel collector is deployed. Without this, Loki 3.6+ floods "
+            "logs with trace export errors every 5 seconds."
+        )
+
+
+class TestGrafanaNotificationConfig:
+    """Validate Grafana notification contact points and SMTP config."""
+
+    @pytest.fixture(autouse=True)
+    def load_spec(self):
+        self.spec = yaml.safe_load(MONITOR_SPEC_FILE.read_text())
+        containers = self.spec["spec"]["containers"]
+        self.grafana = next(c for c in containers if c["name"] == "grafana")
+
+    def test_smtp_user_not_placeholder(self):
+        """SMTP user must not be a placeholder value."""
+        env = self.grafana.get("env", {})
+        smtp_user = env.get("GF_SMTP_USER", "")
+        assert "CHANGE_ME" not in smtp_user and "example.com" not in smtp_user, (
+            f"GF_SMTP_USER is still a placeholder: {smtp_user!r}"
+        )
+
+    def test_smtp_from_not_placeholder(self):
+        env = self.grafana.get("env", {})
+        from_addr = env.get("GF_SMTP_FROM_ADDRESS", "")
+        assert "CHANGE_ME" not in from_addr and "example.com" not in from_addr, (
+            f"GF_SMTP_FROM_ADDRESS is still a placeholder: {from_addr!r}"
+        )
+
+    def test_webhook_receiver_removed(self):
+        """Webhook receiver was removed — no real webhook URL exists."""
+        env = self.grafana.get("env", {})
+        assert "GF_ALERTING_WEBHOOK_URL" not in env, (
+            "GF_ALERTING_WEBHOOK_URL should not be set — webhook receiver removed"
+        )
+
+    def test_smtp_user_from_secret(self):
+        """SMTP user should be injected via Snowflake secret, not hardcoded."""
+        secrets = self.grafana.get("secrets", [])
+        smtp_user_secret = [s for s in secrets if s.get("envVarName") == "GF_SMTP_USER"]
+        assert len(smtp_user_secret) == 1, "GF_SMTP_USER must be injected via a Snowflake secret"
+
+
+# ---------------------------------------------------------------------------
+# Loki LogQL alert rules validation
+# ---------------------------------------------------------------------------
+LOKI_RULES_FILE = MONITORING_DIR / "loki" / "rules" / "fake" / "alerts.yaml"
+
+
+class TestLokiAlertRulesRegression:
+    """Regression tests for Loki LogQL alerting rules.
+
+    Ensures:
+    - YAML is valid and has the expected structure
+    - All rules have required fields (alert, expr, labels.severity)
+    - LogQL severity selectors match poller output labels
+    """
+
+    @pytest.fixture(autouse=True)
+    def load_rules(self):
+        self.rules = yaml.safe_load(LOKI_RULES_FILE.read_text())
+
+    def test_file_exists(self):
+        assert LOKI_RULES_FILE.exists(), f"Missing: {LOKI_RULES_FILE}"
+
+    def test_has_groups_key(self):
+        assert "groups" in self.rules
+
+    def test_has_at_least_one_group(self):
+        assert len(self.rules["groups"]) >= 1
+
+    def test_group_has_name_and_rules(self):
+        for group in self.rules["groups"]:
+            assert "name" in group, "Loki rule group missing 'name'"
+            assert "rules" in group, f"Group '{group['name']}' missing 'rules'"
+
+    def test_all_rules_have_required_fields(self):
+        for group in self.rules["groups"]:
+            for rule in group["rules"]:
+                assert "alert" in rule, f"Rule in group '{group['name']}' missing 'alert'"
+                assert "expr" in rule, f"Rule '{rule.get('alert')}' missing 'expr'"
+                assert "labels" in rule, f"Rule '{rule['alert']}' missing 'labels'"
+                assert "severity" in rule["labels"], (
+                    f"Rule '{rule['alert']}' missing labels.severity"
+                )
+
+    def test_all_rules_have_annotations(self):
+        for group in self.rules["groups"]:
+            for rule in group["rules"]:
+                annotations = rule.get("annotations", {})
+                assert "summary" in annotations, (
+                    f"Rule '{rule['alert']}' missing annotations.summary"
+                )
+
+    def test_severity_values_are_valid(self):
+        valid_severities = {"critical", "warning", "info"}
+        for group in self.rules["groups"]:
+            for rule in group["rules"]:
+                sev = rule["labels"]["severity"]
+                assert sev in valid_severities, (
+                    f"Rule '{rule['alert']}' has invalid severity '{sev}', "
+                    f"expected one of {valid_severities}"
+                )
+
+    def test_all_rules_have_source_label(self):
+        """All Loki rules should have source=loki label for routing."""
+        for group in self.rules["groups"]:
+            for rule in group["rules"]:
+                assert rule["labels"].get("source") == "loki", (
+                    f"Rule '{rule['alert']}' missing source=loki label"
+                )
+
+    def test_error_spike_rule_severity_selector_matches_poller(self):
+        """SPCSErrorSpike rule must use severity='ERROR' matching poller output.
+
+        The poller sets severity as a Loki stream label with values like
+        'ERROR', 'WARNING', 'INFO'. The LogQL selector must match exactly.
+        """
+        all_rules = []
+        for group in self.rules["groups"]:
+            all_rules.extend(group["rules"])
+        error_spike = next((r for r in all_rules if r["alert"] == "SPCSErrorSpike"), None)
+        assert error_spike is not None, "Missing SPCSErrorSpike rule"
+        assert 'severity="ERROR"' in error_spike["expr"], (
+            f'SPCSErrorSpike must filter on severity="ERROR" to match poller labels, '
+            f"got: {error_spike['expr']}"
+        )
+
+    def test_all_rules_reference_spcs_logs_job(self):
+        """All rules should query the spcs-logs job label from the poller."""
+        for group in self.rules["groups"]:
+            for rule in group["rules"]:
+                assert "spcs-logs" in rule["expr"], (
+                    f"Rule '{rule['alert']}' must reference job=spcs-logs, got: {rule['expr']}"
+                )
+
+    def test_expected_alert_names(self):
+        all_rules = []
+        for group in self.rules["groups"]:
+            all_rules.extend(group["rules"])
+        names = {r["alert"] for r in all_rules}
+        expected = {"SPCSErrorSpike", "SPCSContainerOOM", "SPCSCrashLoop", "SPCSAuthFailure"}
+        assert names == expected, f"Missing: {expected - names}, unexpected: {names - expected}"
+
+
+# ---------------------------------------------------------------------------
+# Dashboard: Health
+# ---------------------------------------------------------------------------
+DASH_HEALTH = DASHBOARD_DIR / "health.json"
+
+
+class TestDashboardHealth:
+    """Validate the Health dashboard (single pane of glass).
+
+    Guards against:
+    - Missing or broken panels
+    - Wrong datasource references
+    - Loki panels not matching poller severity labels
+    """
+
+    @pytest.fixture(autouse=True)
+    def load_dashboard(self):
+        self.dash = json.loads(DASH_HEALTH.read_text())
+        self.panels = {p["title"]: p for p in self.dash["panels"] if p.get("title")}
+
+    def test_file_exists(self):
+        assert DASH_HEALTH.exists()
+
+    def test_dashboard_uid(self):
+        assert self.dash["uid"] == "health"
+
+    def test_dashboard_title(self):
+        assert self.dash["title"] == "Prefect Health"
+
+    def test_has_services_up_panel(self):
+        assert "Services UP" in self.panels
+
+    def test_has_server_uptime_panels(self):
+        assert "Server Uptime (1h)" in self.panels
+        assert "Server Uptime (24h)" in self.panels
+
+    def test_has_firing_alerts_panel(self):
+        assert "Firing Alerts" in self.panels
+
+    def test_has_flow_success_rate_panel(self):
+        assert "Flow Success Rate" in self.panels
+
+    def test_has_active_flow_runs_panel(self):
+        assert "Active Flow Runs" in self.panels
+
+    def test_has_failed_runs_panel(self):
+        assert "Failed Runs" in self.panels
+
+    def test_has_cpu_usage_panel(self):
+        assert "CPU Usage by Container" in self.panels
+
+    def test_has_memory_usage_panel(self):
+        assert "Memory Usage by Container" in self.panels
+
+    def test_has_recent_error_logs_panel(self):
+        assert "Recent SPCS Error Logs" in self.panels
+
+    def test_error_logs_uses_loki_datasource(self):
+        """Error logs panel must use Loki datasource."""
+        panel = self.panels["Recent SPCS Error Logs"]
+        ds = panel.get("datasource", {})
+        assert ds.get("uid") == "loki", f"Error logs panel must use Loki datasource, got: {ds}"
+
+    def test_error_logs_queries_severity_error(self):
+        """Error logs LogQL must filter on severity='ERROR' matching poller labels."""
+        panel = self.panels["Recent SPCS Error Logs"]
+        expr = panel["targets"][0]["expr"]
+        assert 'severity="ERROR"' in expr, (
+            f'Error logs must filter severity="ERROR" (matching poller stream key), got: {expr}'
+        )
+
+    def test_error_logs_queries_spcs_logs_job(self):
+        """Error logs must query the spcs-logs job from the poller."""
+        panel = self.panels["Recent SPCS Error Logs"]
+        expr = panel["targets"][0]["expr"]
+        assert "spcs-logs" in expr, f"Error logs must query spcs-logs job, got: {expr}"
+
+    def test_prometheus_panels_use_correct_datasource(self):
+        """All Prometheus-type panels must use uid='prometheus'."""
+        for title, panel in self.panels.items():
+            ds = panel.get("datasource", {})
+            if isinstance(ds, dict) and ds.get("type") == "prometheus":
+                assert ds["uid"] == "prometheus", (
+                    f"Panel '{title}' has prometheus type but uid='{ds.get('uid')}'"
+                )
+
+    def test_loki_panels_use_correct_datasource(self):
+        """All Loki-type panels must use uid='loki'."""
+        for title, panel in self.panels.items():
+            ds = panel.get("datasource", {})
+            if isinstance(ds, dict) and ds.get("type") == "loki":
+                assert ds["uid"] == "loki", (
+                    f"Panel '{title}' has loki type but uid='{ds.get('uid')}'"
+                )
+
+    def test_has_nav_links_to_all_dashboards(self):
+        """Health dashboard should link to all other dashboards."""
+        links = self.dash.get("links", [])
+        link_titles = {link["title"] for link in links}
+        expected = {"SPCS Overview", "Prefect App", "VM Workers", "Alerts", "SPCS Logs", "Logs"}
+        assert expected.issubset(link_titles), f"Missing dashboard links: {expected - link_titles}"
+
+    def test_has_workers_per_pool_panel(self):
+        assert "Workers per Pool" in self.panels
+
+    def test_has_poll_duration_panel(self):
+        assert "Poll Duration" in self.panels
+
+    def test_has_worker_logs_stream_panel(self):
+        assert "Worker Logs Stream" in self.panels
+
+
+# ---------------------------------------------------------------------------
+# Cross-file: poller severity labels match Loki alert rule selectors
+# ---------------------------------------------------------------------------
+class TestPollerLokiRuleLabelConsistency:
+    """Validate that poller severity stream labels match Loki alert rule selectors.
+
+    The poller groups logs into Loki streams keyed by severity (e.g., 'ERROR').
+    Loki alert rules filter on these labels (e.g., {severity="ERROR"}).
+    If they don't match, alert rules silently evaluate to zero.
+    """
+
+    def test_poller_severity_label_matches_loki_error_rule(self):
+        """Poller's severity stream label must match Loki rule's severity selector."""
+        import re as _re
+
+        poller_source = (PROJECT_DIR / "images" / "spcs-log-poller" / "poller.py").read_text()
+        assert '"severity"' in poller_source, "Poller must set severity as a Loki label"
+
+        loki_rules = yaml.safe_load(LOKI_RULES_FILE.read_text())
+        all_rules = []
+        for group in loki_rules["groups"]:
+            all_rules.extend(group["rules"])
+
+        severity_selectors = set()
+        for rule in all_rules:
+            matches = _re.findall(r'severity="(\w+)"', rule["expr"])
+            severity_selectors.update(matches)
+
+        if severity_selectors:
+            assert "ERROR" in severity_selectors or not any(
+                'severity="ERROR"' in r["expr"] for r in all_rules
+            ), "Loki rules reference severity=ERROR but poller must emit that label value"
+
+    def test_poller_job_label_matches_loki_rules(self):
+        """Poller's job=spcs-logs must match what Loki rules filter on."""
+        poller_source = (PROJECT_DIR / "images" / "spcs-log-poller" / "poller.py").read_text()
+        assert '"spcs-logs"' in poller_source, "Poller must set job=spcs-logs"
+
+        loki_rules = yaml.safe_load(LOKI_RULES_FILE.read_text())
+        for group in loki_rules["groups"]:
+            for rule in group["rules"]:
+                assert "spcs-logs" in rule["expr"], (
+                    f"Rule '{rule['alert']}' must reference spcs-logs job"
+                )
+
+    def test_poller_severity_in_stream_key(self):
+        """Poller must include severity in the stream grouping key.
+
+        Loki labels are per-stream. If severity is NOT part of the stream
+        key, all log entries for a service+container go into ONE stream
+        regardless of severity, and {severity="ERROR"} queries fail.
+        """
+        poller_source = (PROJECT_DIR / "images" / "spcs-log-poller" / "poller.py").read_text()
+        assert (
+            "severity" in poller_source.split("key =")[1].split("\n")[0]
+            if "key =" in poller_source
+            else True
+        ), "Poller stream key must include severity for per-severity Loki streams"

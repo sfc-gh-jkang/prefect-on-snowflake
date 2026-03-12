@@ -117,10 +117,10 @@ if $BUILD_MONITORING; then
     docker tag grafana/grafana:12.0.1 "$REGISTRY/grafana:12.0.1"
     PUSH_LIST+=("grafana:12.0.1")
 
-    echo "  Pulling + tagging loki:3.5.0..."
-    docker pull --platform linux/amd64 grafana/loki:3.5.0
-    docker tag grafana/loki:3.5.0 "$REGISTRY/loki:3.5.0"
-    PUSH_LIST+=("loki:3.5.0")
+  echo "  Pulling + tagging loki:3.6.7..."
+  docker pull --platform linux/amd64 grafana/loki:3.6.7
+  docker tag grafana/loki:3.6.7 "$REGISTRY/loki:3.6.7"
+  PUSH_LIST+=("loki:3.6.7")
 
     echo "  Pulling + tagging postgres_exporter:v0.16.0..."
     docker pull --platform linux/amd64 quay.io/prometheuscommunity/postgres-exporter:v0.16.0

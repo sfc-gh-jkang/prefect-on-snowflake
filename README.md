@@ -211,6 +211,14 @@ snow sql -f sql/06_setup_image_repo.sql --connection <conn>
 - `pools.yaml` must be on the `PREFECT_FLOWS` stage for the deploy job to find it
 - `build_and_push.sh` builds all required images including `postgres:16`, `redis_exporter`, and `prefect-exporter:v3-status`
 
+**Monitoring gotchas:**
+
+- **postgres-exporter PG17 compatibility:** PG17 moved checkpoint columns from `pg_stat_bgwriter` to `pg_stat_checkpointer`. postgres-exporter < v0.17.0 queries the removed columns and floods logs with `ERROR: column "checkpoints_timed" does not exist`. Use v0.17.0+ (v0.19.1 recommended).
+- **Grafana legacy vs unified alerting:** Grafana 11+ removed legacy alerting. Having both `GF_ALERTING_ENABLED=true` and `GF_UNIFIED_ALERTING_ENABLED=true` causes startup conflicts. Set `GF_ALERTING_ENABLED=false` explicitly.
+- **Loki alertmanager_url disabled:** Grafana's unified alerting Alertmanager API returns `400 Bad Request` for Loki-generated alerts. Set `alertmanager_url: ""` in `loki-config.yaml`. Loki's ruler still evaluates rules locally; Grafana queries alert state via the ruler API (`/loki/api/v1/rules`).
+- **Loki ruler `alertmanager_client` YAML structure:** The `NotifierConfig` Go struct uses `yaml:",inline"` for `BasicAuth`, meaning fields must be flat (`basic_auth_username`, `basic_auth_password`) at the `alertmanager_client` level — NOT nested as `basic_auth.username`.
+- **SPCS volume mount caching:** When a container crashes repeatedly after a spec change, SPCS may keep using the cached volume mount from the original start. `snow spcs service upgrade` alone may not force a refresh. Use `ALTER SERVICE ... SUSPEND` then `ALTER SERVICE ... RESUME` to force a clean restart with fresh volume mounts.
+
 ### Hybrid Worker (GCP)
 
 ```bash
@@ -2004,8 +2012,8 @@ PUT file://monitoring/specs/pf_monitor.yaml @MONITOR_STAGE/specs/ ...
 Stock images (no Dockerfile — pull and retag):
 - `prom/prometheus:v3.4.1`
 - `grafana/grafana:12.0.1`
-- `grafana/loki:3.5.0`
-- `prometheuscommunity/postgres-exporter:v0.16.0`
+- `grafana/loki:3.6.7`
+- `prometheuscommunity/postgres-exporter:v0.19.1`
 
 Custom images (build with `--platform linux/amd64`):
 - `prefect-exporter` — `images/prefect-exporter/Dockerfile`

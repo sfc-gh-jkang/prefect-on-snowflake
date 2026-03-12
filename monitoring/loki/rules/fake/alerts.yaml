@@ -1,5 +1,7 @@
 # Loki LogQL alerting rules for SPCS container logs.
-# Evaluated by Loki's ruler, routed to Grafana unified alerting via alertmanager_url.
+# Evaluated by Loki's ruler locally. Grafana queries alert state via the ruler API
+# (/loki/api/v1/rules) — alertmanager_url is disabled because Grafana's unified
+# alerting AM API returns 400 for Loki-generated alerts.
 # The "fake" directory name is a Loki convention for the tenant ID in single-tenant mode.
 
 groups:

@@ -1,6 +1,5 @@
 # Grafana alerting contact points — provisioned on startup.
-# Sends alert notifications to webhook and/or email endpoints.
-# Set GF_ALERTING_WEBHOOK_URL as environment variable to enable webhook.
+# Sends alert notifications via Slack and/or email.
 # Set GF_SMTP_* environment variables on the Grafana container to enable email.
 apiVersion: 1
 
@@ -8,15 +7,6 @@ contactPoints:
   - orgId: 1
     name: prefect-alerts
     receivers:
-      # Generic webhook — compatible with any HTTP endpoint.
-      # Disabled if GF_ALERTING_WEBHOOK_URL is not set.
-      - uid: webhook-receiver
-        type: webhook
-        settings:
-          url: ${GF_ALERTING_WEBHOOK_URL}
-          httpMethod: POST
-        disableResolveMessage: false
-
       # Slack — posts to a channel via incoming webhook.
       # Set GF_ALERTING_SLACK_WEBHOOK_URL env var or Snowflake secret.
       - uid: slack-receiver

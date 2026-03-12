@@ -53,7 +53,6 @@ spec:
         GF_ALERTING_ENABLED: "false"
         GF_UNIFIED_ALERTING_ENABLED: "true"
         GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /opt/grafana/dashboards/health.json
-        GF_ALERTING_WEBHOOK_URL: "https://hooks.example.com/placeholder"
         GF_DATABASE_TYPE: postgres
         # NOTE: GF_DATABASE_SSL_MODE is intentionally omitted here.
         # The GRAFANA_DB_DSN secret already contains the correct sslmode
@@ -64,11 +63,8 @@ spec:
         # Port 465 (implicit SSL) is blocked by SPCS network rules; use 587 instead.
         GF_SMTP_ENABLED: "true"
         GF_SMTP_HOST: "smtp.gmail.com:587"
-        GF_SMTP_USER: "CHANGE_ME@example.com"
-        GF_SMTP_FROM_ADDRESS: "CHANGE_ME@example.com"
         GF_SMTP_FROM_NAME: "Prefect SPCS Monitoring"
         GF_SMTP_STARTTLS_POLICY: "MandatoryStartTLS"
-        GF_SMTP_ALERT_RECIPIENTS: "CHANGE_ME@example.com"
       secrets:
         - snowflakeSecret:
             objectName: grafana_admin_password
@@ -86,6 +82,18 @@ spec:
             objectName: slack_webhook_url
           secretKeyRef: secret_string  # pragma: allowlist secret
           envVarName: GF_ALERTING_SLACK_WEBHOOK_URL
+        - snowflakeSecret:
+            objectName: grafana_smtp_user
+          secretKeyRef: secret_string  # pragma: allowlist secret
+          envVarName: GF_SMTP_USER
+        - snowflakeSecret:
+            objectName: grafana_smtp_user
+          secretKeyRef: secret_string  # pragma: allowlist secret
+          envVarName: GF_SMTP_FROM_ADDRESS
+        - snowflakeSecret:
+            objectName: grafana_smtp_user
+          secretKeyRef: secret_string  # pragma: allowlist secret
+          envVarName: GF_SMTP_ALERT_RECIPIENTS
       volumeMounts:
         - name: grafana-provisioning
           mountPath: /etc/grafana/provisioning
@@ -99,7 +107,7 @@ spec:
 
     # ── Loki ────────────────────────────────────────────────
     - name: loki
-      image: /prefect_db/prefect_schema/prefect_repository/loki:3.5.0
+      image: /prefect_db/prefect_schema/prefect_repository/loki:3.6.7
       resources:
         requests:
           cpu: 0.3
