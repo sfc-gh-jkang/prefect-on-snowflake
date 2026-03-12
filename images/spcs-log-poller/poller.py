@@ -72,11 +72,11 @@ def fetch_logs(conn: snowflake.connector.SnowflakeConnection) -> list[dict]:
         WHERE SERVICE_NAME IN ({services_list})
     """
     if _last_timestamp:
-        query += f"  AND TIMESTAMP > '{_last_timestamp}'::TIMESTAMP_LTZ\n"
+        query += f"  AND TIMESTAMP > '{_last_timestamp}'::TIMESTAMP_NTZ\n"
     else:
         # First poll uses INITIAL_LOOKBACK_SECONDS for cold-start backfill
         lookback = INITIAL_LOOKBACK_SECONDS if _is_first_poll else LOOKBACK_SECONDS
-        query += f"  AND TIMESTAMP > DATEADD(second, -{lookback}, CURRENT_TIMESTAMP())\n"
+        query += f"  AND TIMESTAMP > DATEADD(second, -{lookback}, SYSDATE())\n"
     query += "    ORDER BY TIMESTAMP ASC\n    LIMIT 1000\n"
 
     cur = conn.cursor()
@@ -103,7 +103,7 @@ def push_to_loki(logs: list[dict]) -> None:
         service = entry.get("SERVICE_NAME", "unknown")
         container = entry.get("CONTAINER_NAME", "unknown")
         severity = entry.get("SEVERITY", "INFO")
-        key = f"{service}|{container}"
+        key = f"{service}|{container}|{severity}"
         if key not in streams:
             streams[key] = {
                 "labels": {
