@@ -121,7 +121,6 @@ def get_snowflake_connection(query_tag: str | None = None):
         warehouse=os.environ.get("SNOWFLAKE_WAREHOUSE", "COMPUTE_WH"),
         database=os.environ.get("SNOWFLAKE_DATABASE", "PREFECT_DB"),
         schema=os.environ.get("SNOWFLAKE_SCHEMA", "PREFECT_SCHEMA"),
-        role=os.environ.get("SNOWFLAKE_ROLE", "ACCOUNTADMIN"),
         session_parameters={"QUERY_TAG": tag},
     )
 
@@ -138,11 +137,14 @@ def get_snowflake_connection(query_tag: str | None = None):
             token=token,
             **common,
         )
-    elif pat:
+
+    role = os.environ.get("SNOWFLAKE_ROLE", "ACCOUNTADMIN")
+    if pat:
         return snowflake.connector.connect(
             account=account,
             user=os.environ.get("SNOWFLAKE_USER", ""),
             password=pat,
+            role=role,
             **common,
         )
     else:
@@ -150,6 +152,7 @@ def get_snowflake_connection(query_tag: str | None = None):
             account=account,
             user=os.environ.get("SNOWFLAKE_USER", ""),
             password=os.environ.get("SNOWFLAKE_PASSWORD", ""),
+            role=role,
             **common,
         )
 
