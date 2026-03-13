@@ -4,27 +4,33 @@ Pool configuration is loaded from pools.yaml at the project root.
 Add new external workers (Azure, AWS, K8s) by adding entries there.
 
 Usage:
-  # Deploy to SPCS (default)
-  PREFECT_API_URL=https://<spcs-endpoint>/api python flows/deploy.py
+  # Deploy to SPCS pool on current cloud (uses PREFECT_API_URL from env)
+  uv run python flows/deploy.py
 
   # Deploy to a specific pool
-  PREFECT_API_URL=https://<spcs-endpoint>/api python flows/deploy.py --pool gcp
+  uv run python flows/deploy.py --pool gcp
 
-  # Deploy to multiple specific pools
-  PREFECT_API_URL=https://<spcs-endpoint>/api python flows/deploy.py --pool gcp --pool azure
+  # Deploy to all pools on all 3 clouds (reads .env for per-cloud URLs/PATs)
+  uv run python flows/deploy.py --cloud all --all
 
-  # Deploy to all pools defined in pools.yaml
-  PREFECT_API_URL=https://<spcs-endpoint>/api python flows/deploy.py --all
+  # Deploy a single flow to one cloud
+  uv run python flows/deploy.py --cloud aws --name alert-test
 
-  # Deploy a single flow by name (to default pool)
-  PREFECT_API_URL=https://<spcs-endpoint>/api python flows/deploy.py --name quarterly-report
+  # Deploy to multiple clouds
+  uv run python flows/deploy.py --cloud aws --cloud gcp --all
+
+  # Deploy to all pools defined in pools.yaml (current cloud)
+  uv run python flows/deploy.py --all
 
   # Show what would change without deploying (plan-style diff)
-  PREFECT_API_URL=https://<spcs-endpoint>/api python flows/deploy.py --diff
-  PREFECT_API_URL=https://<spcs-endpoint>/api python flows/deploy.py --diff --pool gcp
+  uv run python flows/deploy.py --cloud aws --diff
 
   # Validate all registry entries offline (no server connection needed)
-  python flows/deploy.py --validate
+  uv run python flows/deploy.py --validate
+
+Cloud selection (--cloud):
+  Reads SPCS_ENDPOINT_<CLOUD> and SNOWFLAKE_PAT_<CLOUD> from .env.
+  Without --cloud, uses PREFECT_API_URL and SNOWFLAKE_PAT from environment.
 
 Environment variables for git-based deployment (all pools when configured):
   GIT_REPO_URL      — HTTPS URL to your git repo (GitHub, GitLab, BitBucket, etc.)
@@ -66,18 +72,36 @@ from shared_utils import get_git_sha
 
 SNOWFLAKE_PAT = os.environ.get("SNOWFLAKE_PAT", "")
 
+CLOUD_CONFIGS = {
+    "aws": {
+        "endpoint_var": "SPCS_ENDPOINT_AWS",
+        "pat_var": "SNOWFLAKE_PAT_AWS",
+    },
+    "azure": {
+        "endpoint_var": "SPCS_ENDPOINT_AZURE",
+        "pat_var": "SNOWFLAKE_PAT_AZURE",
+    },
+    "gcp": {
+        "endpoint_var": "SPCS_ENDPOINT_GCP",
+        "pat_var": "SNOWFLAKE_PAT_GCP",
+    },
+}
 
-def _patch_snowflake_auth(client):
-    """Inject Snowflake Token auth header for SPCS ingress when SNOWFLAKE_PAT is set."""
-    if SNOWFLAKE_PAT:
-        client._client.headers["Authorization"] = f'Snowflake Token="{SNOWFLAKE_PAT}"'
+
+def _patch_snowflake_auth(client, pat: str = ""):
+    """Inject Snowflake Token auth header for SPCS ingress."""
+    token = pat or SNOWFLAKE_PAT
+    if token:
+        client._client.headers["Authorization"] = f'Snowflake Token="{token}"'
     return client
 
 
 @asynccontextmanager
-async def get_client():
+async def get_client(api_url: str = "", pat: str = ""):
+    if api_url:
+        os.environ["PREFECT_API_URL"] = api_url
     async with _get_client() as client:
-        _patch_snowflake_auth(client)
+        _patch_snowflake_auth(client, pat)
         yield client
 
 
@@ -467,7 +491,12 @@ def _build_pull_steps(pool_key: str, entrypoint: str) -> list[dict]:
         return git_clone_steps
 
 
-async def deploy_to_pool(pool_key: str, name_filter: str | None = None):
+async def deploy_to_pool(
+    pool_key: str,
+    name_filter: str | None = None,
+    api_url: str = "",
+    pat: str = "",
+):
     """Deploy flows from FLOW_REGISTRY to a specific pool.
 
     Registers deployments with pool-specific pull_steps. Flow names are derived
@@ -490,7 +519,7 @@ async def deploy_to_pool(pool_key: str, name_filter: str | None = None):
     # Resolve version once: use git SHA if no explicit version on any FlowSpec.
     git_sha = get_git_sha()
 
-    async with get_client() as client:
+    async with get_client(api_url=api_url, pat=pat) as client:
         for spec in FLOW_REGISTRY:
             # Resolve "all" to list of all pool keys
             target_pools = all_pool_keys if spec.pools == "all" else spec.pools
@@ -560,20 +589,24 @@ async def deploy_to_pool(pool_key: str, name_filter: str | None = None):
             print(f"  Deployed: {deploy_name} -> pool={pool_name} version={version_str}{sched_str}")
 
 
-def _parse_args() -> tuple[list[str], str | None, bool, bool]:
-    """Parse CLI arguments. Returns (pool_keys, name_filter, validate, diff).
+def _parse_args() -> tuple[list[str], str | None, bool, bool, list[str]]:
+    """Parse CLI arguments. Returns (pool_keys, name_filter, validate, diff, clouds).
 
-    --pool <key>  Deploy to a specific pool (repeatable)
-    --all         Deploy to all pools in pools.yaml
-    --name <name> Filter to a single flow by base name
-    --validate    Check all registry entries offline (no server needed)
-    --diff        Show what would change without deploying (plan-style diff)
-    (no flags)    Deploy to SPCS only (default)
+    --pool <key>    Deploy to a specific pool (repeatable)
+    --all           Deploy to all pools in pools.yaml
+    --name <name>   Filter to a single flow by base name
+    --cloud <name>  Target cloud: aws, azure, gcp, or all (repeatable)
+                    Reads SPCS_ENDPOINT_<CLOUD> and SNOWFLAKE_PAT_<CLOUD> from env.
+                    Without --cloud, uses PREFECT_API_URL / SNOWFLAKE_PAT.
+    --validate      Check all registry entries offline (no server needed)
+    --diff          Show what would change without deploying (plan-style diff)
+    (no flags)      Deploy to SPCS pool on current cloud only (default)
     """
     pool_keys: list[str] = []
     name_filter = None
     validate = False
     diff = False
+    clouds: list[str] = []
     args = sys.argv[1:]
     i = 0
     while i < len(args):
@@ -591,8 +624,18 @@ def _parse_args() -> tuple[list[str], str | None, bool, bool]:
         elif args[i] == "--name" and i + 1 < len(args):
             name_filter = args[i + 1]
             i += 2
+        elif args[i] == "--cloud" and i + 1 < len(args):
+            cloud = args[i + 1].lower()
+            if cloud == "all":
+                clouds = list(CLOUD_CONFIGS.keys())
+            elif cloud in CLOUD_CONFIGS:
+                clouds.append(cloud)
+            else:
+                available = ", ".join(list(CLOUD_CONFIGS.keys()) + ["all"])
+                print(f"Error: unknown cloud '{cloud}'. Available: {available}")
+                sys.exit(1)
+            i += 2
         elif args[i] == "--gcp":
-            # Backwards compatibility: --gcp is equivalent to --pool gcp
             if "gcp" in POOLS:
                 pool_keys.append("gcp")
             else:
@@ -608,11 +651,10 @@ def _parse_args() -> tuple[list[str], str | None, bool, bool]:
         else:
             i += 1
 
-    # Default: SPCS only
     if not pool_keys and not validate:
         pool_keys = ["spcs"]
 
-    return pool_keys, name_filter, validate, diff
+    return pool_keys, name_filter, validate, diff, clouds
 
 
 def _validate() -> bool:
@@ -753,7 +795,12 @@ def _sync_stage():
         print(f"  Warning: stage sync failed ({exc}), fallback may be stale")
 
 
-async def _diff_pool(pool_key: str, name_filter: str | None = None) -> tuple[int, int, int]:
+async def _diff_pool(
+    pool_key: str,
+    name_filter: str | None = None,
+    api_url: str = "",
+    pat: str = "",
+) -> tuple[int, int, int]:
     """Show plan-style diff of what deploy would change for a pool.
 
     Compares FLOW_REGISTRY against live Prefect deployments and prints:
@@ -774,8 +821,7 @@ async def _diff_pool(pool_key: str, name_filter: str | None = None) -> tuple[int
     changed = 0
     unchanged = 0
 
-    async with get_client() as client:
-        # Fetch all existing deployments for comparison
+    async with get_client(api_url=api_url, pat=pat) as client:
         existing: dict[str, Any] = {}
         try:
             from prefect.client.schemas.filters import (
@@ -866,40 +912,69 @@ async def _diff_pool(pool_key: str, name_filter: str | None = None) -> tuple[int
     return added, changed, unchanged
 
 
+def _resolve_cloud_targets(clouds: list[str]) -> list[tuple[str, str, str]]:
+    """Resolve --cloud flags to (label, api_url, pat) tuples from env vars."""
+    targets: list[tuple[str, str, str]] = []
+    for cloud in clouds:
+        cfg = CLOUD_CONFIGS[cloud]
+        endpoint = os.environ.get(cfg["endpoint_var"], "")
+        pat = os.environ.get(cfg["pat_var"], "")
+        if not endpoint:
+            print(f"Error: {cfg['endpoint_var']} not set in environment for --cloud {cloud}")
+            sys.exit(1)
+        if not pat:
+            print(f"Error: {cfg['pat_var']} not set in environment for --cloud {cloud}")
+            sys.exit(1)
+        api_url = f"https://{endpoint}/api"
+        targets.append((cloud.upper(), api_url, pat))
+    return targets
+
+
 if __name__ == "__main__":
-    pool_keys, name_filter, validate, diff = _parse_args()
+    pool_keys, name_filter, validate, diff, clouds = _parse_args()
 
     if validate:
         ok = _validate()
         sys.exit(0 if ok else 1)
 
+    cloud_targets = _resolve_cloud_targets(clouds) if clouds else [("", "", "")]
+
     if diff:
         total_added = 0
         total_changed = 0
         total_unchanged = 0
-        for key in pool_keys:
-            pool_name = POOLS[key]["pool_name"]
-            print(f"\n--- Diff for {pool_name} ({key}) ---")
-            a, c, u = asyncio.run(_diff_pool(key, name_filter))
-            total_added += a
-            total_changed += c
-            total_unchanged += u
+        for label, api_url, pat in cloud_targets:
+            if label:
+                print(f"\n{'=' * 60}")
+                print(f"  Cloud: {label}")
+                print(f"{'=' * 60}")
+            for key in pool_keys:
+                pool_name = POOLS[key]["pool_name"]
+                print(f"\n--- Diff for {pool_name} ({key}) ---")
+                a, c, u = asyncio.run(_diff_pool(key, name_filter, api_url=api_url, pat=pat))
+                total_added += a
+                total_changed += c
+                total_unchanged += u
         print(
             f"\nPlan: {total_added} to add, {total_changed} to change, {total_unchanged} unchanged."
         )
         sys.exit(0)
 
-    deployed_spcs = False
+    for label, api_url, pat in cloud_targets:
+        if label:
+            print(f"\n{'=' * 60}")
+            print(f"  Deploying to {label}")
+            print(f"{'=' * 60}")
 
-    for key in pool_keys:
-        pool_name = POOLS[key]["pool_name"]
-        print(f"Deploying flows to {pool_name}...")
-        asyncio.run(deploy_to_pool(key, name_filter))
-        if POOLS[key].get("type") == "spcs":
-            deployed_spcs = True
+        deployed_spcs = False
+        for key in pool_keys:
+            pool_name = POOLS[key]["pool_name"]
+            print(f"Deploying flows to {pool_name}...")
+            asyncio.run(deploy_to_pool(key, name_filter, api_url=api_url, pat=pat))
+            if POOLS[key].get("type") == "spcs":
+                deployed_spcs = True
 
-    # Auto-sync stage after SPCS deployments to keep fallback fresh
-    if deployed_spcs:
-        _sync_stage()
+        if deployed_spcs:
+            _sync_stage()
 
     print("Done!")

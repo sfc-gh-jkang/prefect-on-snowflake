@@ -141,7 +141,7 @@ class TestDetectPoolKeyRemoved:
     def test_default_pool_key_is_spcs(self):
         """_parse_args with no args should default pool_keys to ['spcs']."""
         with _import_deploy() as mod, patch("sys.argv", ["deploy.py"]):
-            pool_keys, _, _, _ = mod._parse_args()
+            pool_keys, _, _, _, _ = mod._parse_args()
             assert pool_keys == ["spcs"]
 
 
@@ -154,56 +154,56 @@ class TestParseArgs:
     def test_no_args_defaults_to_detected_pool(self):
         with _import_deploy() as mod:
             with patch("sys.argv", ["deploy.py"]):
-                pool_keys, name_filter, validate, diff = mod._parse_args()
+                pool_keys, name_filter, validate, diff, clouds = mod._parse_args()
             assert pool_keys == ["spcs"]
             assert name_filter is None
             assert validate is False
             assert diff is False
+            assert clouds == []
 
     def test_pool_flag(self):
         with _import_deploy() as mod:
             with patch("sys.argv", ["deploy.py", "--pool", "gcp"]):
-                pool_keys, name_filter, validate, diff = mod._parse_args()
+                pool_keys, name_filter, validate, diff, _ = mod._parse_args()
             assert pool_keys == ["gcp"]
 
     def test_pool_flag_repeatable(self):
         with _import_deploy() as mod:
             with patch("sys.argv", ["deploy.py", "--pool", "spcs", "--pool", "gcp"]):
-                pool_keys, _, _, _ = mod._parse_args()
+                pool_keys, _, _, _, _ = mod._parse_args()
             assert "spcs" in pool_keys
             assert "gcp" in pool_keys
 
     def test_all_flag_returns_all_pools(self):
         with _import_deploy() as mod:
             with patch("sys.argv", ["deploy.py", "--all"]):
-                pool_keys, _, _, _ = mod._parse_args()
+                pool_keys, _, _, _, _ = mod._parse_args()
             assert set(pool_keys) == set(mod.POOLS.keys())
 
     def test_name_filter(self):
         with _import_deploy() as mod:
             with patch("sys.argv", ["deploy.py", "--name", "example-flow"]):
-                _, name_filter, _, _ = mod._parse_args()
+                _, name_filter, _, _, _ = mod._parse_args()
             assert name_filter == "example-flow"
 
     def test_validate_flag(self):
         with _import_deploy() as mod:
             with patch("sys.argv", ["deploy.py", "--validate"]):
-                pool_keys, _, validate, _ = mod._parse_args()
+                pool_keys, _, validate, _, _ = mod._parse_args()
             assert validate is True
-            # When validate is set, pool_keys can be empty
             assert pool_keys == []
 
     def test_diff_flag(self):
         with _import_deploy() as mod:
             with patch("sys.argv", ["deploy.py", "--diff"]):
-                _, _, _, diff = mod._parse_args()
+                _, _, _, diff, _ = mod._parse_args()
             assert diff is True
 
     def test_gcp_backwards_compat(self):
         """--gcp should be equivalent to --pool gcp."""
         with _import_deploy() as mod:
             with patch("sys.argv", ["deploy.py", "--gcp"]):
-                pool_keys, _, _, _ = mod._parse_args()
+                pool_keys, _, _, _, _ = mod._parse_args()
             assert pool_keys == ["gcp"]
 
     def test_unknown_pool_exits(self):
@@ -214,17 +214,44 @@ class TestParseArgs:
         ):
             mod._parse_args()
 
+    def test_cloud_flag_single(self):
+        with _import_deploy() as mod:
+            with patch("sys.argv", ["deploy.py", "--cloud", "aws"]):
+                _, _, _, _, clouds = mod._parse_args()
+            assert clouds == ["aws"]
+
+    def test_cloud_flag_all(self):
+        with _import_deploy() as mod:
+            with patch("sys.argv", ["deploy.py", "--cloud", "all"]):
+                _, _, _, _, clouds = mod._parse_args()
+            assert set(clouds) == {"aws", "azure", "gcp"}
+
+    def test_cloud_flag_repeatable(self):
+        with _import_deploy() as mod:
+            with patch("sys.argv", ["deploy.py", "--cloud", "aws", "--cloud", "gcp"]):
+                _, _, _, _, clouds = mod._parse_args()
+            assert clouds == ["aws", "gcp"]
+
+    def test_unknown_cloud_exits(self):
+        with (
+            _import_deploy() as mod,
+            patch("sys.argv", ["deploy.py", "--cloud", "nonexistent"]),
+            pytest.raises(SystemExit),
+        ):
+            mod._parse_args()
+
     def test_combined_flags(self):
         with _import_deploy() as mod:
             with patch(
                 "sys.argv",
-                ["deploy.py", "--pool", "gcp", "--name", "e2e-test", "--diff"],
+                ["deploy.py", "--pool", "gcp", "--name", "e2e-test", "--diff", "--cloud", "aws"],
             ):
-                pool_keys, name_filter, validate, diff = mod._parse_args()
+                pool_keys, name_filter, validate, diff, clouds = mod._parse_args()
             assert pool_keys == ["gcp"]
             assert name_filter == "e2e-test"
             assert validate is False
             assert diff is True
+            assert clouds == ["aws"]
 
 
 # ---------------------------------------------------------------------------
