@@ -44,6 +44,7 @@ import asyncio
 import os
 import subprocess
 import sys
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
@@ -54,7 +55,7 @@ import yaml
 # Ensure flows directory is on the path regardless of cwd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from prefect.client.orchestration import get_client
+from prefect.client.orchestration import get_client as _get_client
 from prefect.client.schemas.actions import DeploymentScheduleCreate
 from prefect.client.schemas.schedules import (
     CronSchedule,
@@ -62,6 +63,23 @@ from prefect.client.schemas.schedules import (
     RRuleSchedule,
 )
 from shared_utils import get_git_sha
+
+SNOWFLAKE_PAT = os.environ.get("SNOWFLAKE_PAT", "")
+
+
+def _patch_snowflake_auth(client):
+    """Inject Snowflake Token auth header for SPCS ingress when SNOWFLAKE_PAT is set."""
+    if SNOWFLAKE_PAT:
+        client._client.headers["Authorization"] = f'Snowflake Token="{SNOWFLAKE_PAT}"'
+    return client
+
+
+@asynccontextmanager
+async def get_client():
+    async with _get_client() as client:
+        _patch_snowflake_auth(client)
+        yield client
+
 
 # Environment name for multi-environment support.
 # When set, deployment names are prefixed: "dev/example-flow-local", "prod/example-flow-gcp"
