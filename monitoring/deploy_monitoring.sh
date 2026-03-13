@@ -12,6 +12,10 @@
 
 set -euo pipefail
 
+if [[ -f .env ]]; then
+    set -a && source .env && set +a
+fi
+
 CONNECTION="${1:-aws_spcs}"
 if [[ "$1" == "--connection" ]]; then
     CONNECTION="${2:-aws_spcs}"
@@ -59,24 +63,32 @@ if [[ -n "$PG_HOST" ]]; then
     PG_RULE_ENTRY=", '${PG_HOST}:5432'"
 fi
 
+SLACK_RULE_ENTRIES=""
+SLACK_ENABLED="${SLACK_ENABLED:-false}"
+if [[ "$SLACK_ENABLED" == "true" ]]; then
+    SLACK_RULE_ENTRIES="'hooks.slack.com:443', 'api.slack.com:443', "
+fi
+
 snow sql -q "
   CREATE OR REPLACE NETWORK RULE ${DB}.${SCHEMA}.MONITOR_EGRESS_RULE
     MODE = EGRESS
     TYPE = HOST_PORT
     VALUE_LIST = (
-      'hooks.slack.com:443',
-      'api.slack.com:443',
-      'discord.com:443',
+      ${SLACK_RULE_ENTRIES}'discord.com:443',
       'smtp.gmail.com:587'${PG_RULE_ENTRY}
     )
-    COMMENT = 'Grafana alerting egress — Slack, Discord, email (STARTTLS 587) + Postgres';
+    COMMENT = 'Grafana alerting egress — Slack (opt-in), Discord, email (STARTTLS 587) + Postgres';
 " --connection "$CONNECTION" || true
 
 echo "[3/7] Creating External Access Integration for monitoring ..."
+SLACK_SECRET_ENTRY=""
+if [[ "$SLACK_ENABLED" == "true" ]]; then
+    SLACK_SECRET_ENTRY=", ${DB}.${SCHEMA}.SLACK_WEBHOOK_URL"
+fi
 snow sql -q "
   CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION PREFECT_MONITOR_EAI
     ALLOWED_NETWORK_RULES = (${DB}.${SCHEMA}.MONITOR_EGRESS_RULE)
-    ALLOWED_AUTHENTICATION_SECRETS = (${DB}.${SCHEMA}.POSTGRES_EXPORTER_DSN, ${DB}.${SCHEMA}.GRAFANA_DB_DSN, ${DB}.${SCHEMA}.GRAFANA_SMTP_PASSWORD, ${DB}.${SCHEMA}.SLACK_WEBHOOK_URL)
+    ALLOWED_AUTHENTICATION_SECRETS = (${DB}.${SCHEMA}.POSTGRES_EXPORTER_DSN, ${DB}.${SCHEMA}.GRAFANA_DB_DSN, ${DB}.${SCHEMA}.GRAFANA_SMTP_PASSWORD${SLACK_SECRET_ENTRY})
     ENABLED = TRUE
     COMMENT = 'Monitoring stack egress for alert delivery, Postgres access, and SMTP email';
 " --connection "$CONNECTION" || true
@@ -253,18 +265,22 @@ except Exception as e:
     fi
 fi
 
-# --- Slack webhook URL secret ---------------------------------------------------
-echo "[5e/7] Creating Slack webhook URL secret ..."
-SLACK_URL="${SLACK_WEBHOOK_URL:-}"
-if [[ -z "$SLACK_URL" ]]; then
-    echo "  SLACK_WEBHOOK_URL env var not set."
-    read -r -s -p "  Enter Slack webhook URL (or press Enter to skip): " SLACK_URL
-    echo ""
-fi
-if [[ -z "$SLACK_URL" ]]; then
-    echo "  WARNING: Slack webhook URL not set — Grafana Slack alerts will not work."
+# --- Slack webhook URL secret (opt-in — requires SLACK_ENABLED=true) ----------
+if [[ "$SLACK_ENABLED" == "true" ]]; then
+    echo "[5e/7] Creating Slack webhook URL secret ..."
+    SLACK_URL="${SLACK_WEBHOOK_URL:-}"
+    if [[ -z "$SLACK_URL" ]]; then
+        echo "  SLACK_WEBHOOK_URL env var not set."
+        read -r -s -p "  Enter Slack webhook URL (or press Enter to skip): " SLACK_URL
+        echo ""
+    fi
+    if [[ -z "$SLACK_URL" ]]; then
+        echo "  WARNING: Slack webhook URL not set — Grafana Slack alerts will not work."
+    else
+        _create_secret SLACK_WEBHOOK_URL "$SLACK_URL" "Slack incoming webhook URL for Grafana alerting"
+    fi
 else
-    _create_secret SLACK_WEBHOOK_URL "$SLACK_URL" "Slack incoming webhook URL for Grafana alerting"
+    echo "[5e/7] Skipping Slack webhook secret (SLACK_ENABLED=false)."
 fi
 
 # --- Create service -----------------------------------------------------------
@@ -305,3 +321,33 @@ echo "  Loki:       https://<endpoint>/ (log push endpoint)"
 echo ""
 echo "To get the actual URLs:"
 echo "  snow sql -q \"SHOW ENDPOINTS IN SERVICE ${DB}.${SCHEMA}.${SERVICE}\" --connection $CONNECTION"
+echo ""
+
+# --- Restart VM monitoring agents (if VMs are reachable) ----------------------
+echo "=== Restarting VM monitoring agents ==="
+echo ""
+echo "VM workers use docker-compose.monitoring.yml overlay for monitoring sidecars."
+echo "If you have VMs running, restart their monitoring stack to pick up any config changes."
+echo ""
+
+GCP_VM="${GCP_VM_NAME:?Set GCP_VM_NAME in .env}"
+GCP_ZONE="${GCP_ZONE:?Set GCP_ZONE in .env}"
+
+if command -v gcloud &>/dev/null; then
+    echo "Attempting to restart GCP VM monitoring agents ($GCP_VM)..."
+    if gcloud compute ssh "$GCP_VM" --zone="$GCP_ZONE" \
+        --command="cd /opt/prefect-gcp && \
+            set -a && source .env && set +a && \
+            docker compose -f docker-compose.gcp.yaml -f docker-compose.monitoring.yml up -d \
+                node-exporter cadvisor auth-proxy-monitor prometheus-agent promtail" 2>&1; then
+        echo "  GCP VM monitoring agents restarted."
+    else
+        echo "  Could not reach GCP VM — restart manually if needed."
+    fi
+else
+    echo "  gcloud CLI not found — skip GCP VM monitoring restart."
+fi
+
+echo ""
+echo "To manually restart VM monitoring agents:"
+echo "  gcloud compute ssh $GCP_VM --zone=$GCP_ZONE --command='cd /opt/prefect-gcp && set -a && source .env && set +a && docker compose -f docker-compose.gcp.yaml -f docker-compose.monitoring.yml up -d node-exporter cadvisor auth-proxy-monitor prometheus-agent promtail'"

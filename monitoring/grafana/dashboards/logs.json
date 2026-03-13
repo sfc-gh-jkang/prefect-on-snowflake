@@ -65,7 +65,7 @@
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "expr": "{job=~\".+\", worker_location=~\"$worker_location\"} |~ \"(?i)(error|exception|fatal|panic|traceback)\"",
+          "expr": "{job=~\".+\", worker_location=~\"$worker_location\", stream=\"stderr\"}",
           "refId": "A"
         }
       ],

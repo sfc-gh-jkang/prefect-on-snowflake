@@ -2106,7 +2106,7 @@ The `search_path=grafana` parameter is critical — without it, Grafana creates 
 
 Grafana sends alert emails via Gmail SMTP using a Google App Password:
 
-1. **Credentials**: macOS Keychain service `gmail-smtp`, account `john.kang@snowflake.com`
+ 1. **Credentials**: macOS Keychain service `gmail-smtp`, account `<YOUR_EMAIL>`
 2. **Deploy script** reads from Keychain → creates Snowflake secret `GRAFANA_SMTP_PASSWORD`
 3. **SPCS spec** mounts the secret as `GF_SMTP_PASSWORD` env var
 4. **Port 587 + STARTTLS**: Uses `GF_SMTP_HOST=smtp.gmail.com:587` with `GF_SMTP_STARTTLS_POLICY=MandatoryStartTLS`
@@ -2118,11 +2118,19 @@ Grafana sends alert emails via Gmail SMTP using a Google App Password:
 To change recipients, edit `GF_SMTP_ALERT_RECIPIENTS` in `monitoring/specs/pf_monitor.yaml`.
 The `MONITOR_EGRESS_RULE` network rule must include `smtp.gmail.com:587` for outbound access.
 
-### Slack Alerting (Incoming Webhook)
+### Slack Alerting (Incoming Webhook) — Opt-In
 
-Grafana posts Slack alerts via a Slack incoming webhook URL stored in the `SLACK_WEBHOOK_URL`
-Snowflake secret, injected as `GF_ALERTING_SLACK_WEBHOOK_URL`. The `MONITOR_EGRESS_RULE`
-must include **both** Slack endpoints:
+Slack alerting is **disabled by default**. To enable:
+
+1. Set `SLACK_ENABLED=true` in `.env`
+2. Set `SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...` in `.env`
+   (create one at [api.slack.com/apps](https://api.slack.com/apps) → Incoming Webhooks)
+3. Re-run `./monitoring/deploy_monitoring.sh` — this adds egress rules and the Snowflake secret
+4. Uncomment the `slack-receiver` block in `monitoring/grafana/provisioning/alerting/contactpoints.yaml`
+5. Uncomment the `slack_webhook_url` secret mount in `monitoring/specs/pf_monitor.yaml`
+6. Upload both files to stage and `SUSPEND`/`RESUME` PF_MONITOR
+
+When enabled, `deploy_monitoring.sh` adds both Slack endpoints to `MONITOR_EGRESS_RULE`:
 
 | Host | Port | Purpose |
 |------|------|---------|
@@ -2130,8 +2138,7 @@ must include **both** Slack endpoints:
 | `api.slack.com` | 443 | Grafana channel-name resolution |
 
 Without `api.slack.com:443`, Grafana's Slack contact point fails with DNS resolution errors
-every alert evaluation cycle (~5 min). The `deploy_monitoring.sh` script creates the rule
-with both entries.
+every alert evaluation cycle (~5 min).
 
 ### Prefect Server Telemetry
 

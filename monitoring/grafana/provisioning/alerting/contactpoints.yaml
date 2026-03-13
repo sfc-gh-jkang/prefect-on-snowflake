@@ -1,5 +1,5 @@
 # Grafana alerting contact points — provisioned on startup.
-# Sends alert notifications via Slack and/or email.
+# Email alerting is always active. Slack is opt-in (set SLACK_ENABLED=true in .env).
 # Set GF_SMTP_* environment variables on the Grafana container to enable email.
 apiVersion: 1
 
@@ -8,25 +8,13 @@ deleteContactPoints:
     uid: webhook-receiver
   - orgId: 1
     uid: ""
+  - orgId: 1
+    uid: slack-receiver
 
 contactPoints:
   - orgId: 1
     name: prefect-alerts
     receivers:
-      # Slack — posts to a channel via incoming webhook.
-      # Set GF_ALERTING_SLACK_WEBHOOK_URL env var or Snowflake secret.
-      - uid: slack-receiver
-        type: slack
-        settings:
-          url: ${GF_ALERTING_SLACK_WEBHOOK_URL}
-          recipient: "#prefect-alerts"
-          mentionChannel: here
-          title: |
-            {{ template "default.title" . }}
-          text: |
-            {{ template "default.message" . }}
-        disableResolveMessage: false
-
       # Email — sends via Gmail SMTP (configured via GF_SMTP_* env vars).
       # Requires GRAFANA_SMTP_PASSWORD secret in Snowflake and
       # smtp.gmail.com:587 in MONITOR_EGRESS_RULE.
@@ -36,3 +24,20 @@ contactPoints:
           addresses: ${GF_SMTP_ALERT_RECIPIENTS}
           singleEmail: true
         disableResolveMessage: false
+      # Slack — DISABLED by default. To enable:
+      #   1. Set SLACK_ENABLED=true in .env
+      #   2. Set SLACK_WEBHOOK_URL=https://hooks.slack.com/services/... in .env
+      #   3. Re-run deploy_monitoring.sh to add egress rules + secret
+      #   4. Uncomment the slack-receiver block below and re-upload this file
+      #
+      # - uid: slack-receiver
+      #   type: slack
+      #   settings:
+      #     url: ${GF_ALERTING_SLACK_WEBHOOK_URL}
+      #     recipient: "#prefect-alerts"
+      #     mentionChannel: here
+      #     title: |
+      #       {{ template "default.title" . }}
+      #     text: |
+      #       {{ template "default.message" . }}
+      #   disableResolveMessage: false

@@ -22,7 +22,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "count(ALERTS{alertstate=\"firing\"}) OR vector(0)",
+          "expr": "grafana_alerting_alerts{state=\"alerting\"}",
           "legendFormat": "firing",
           "refId": "A"
         }
@@ -52,7 +52,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "count(ALERTS{alertstate=\"pending\"}) OR vector(0)",
+          "expr": "grafana_alerting_alerts{state=\"pending\"}",
           "legendFormat": "pending",
           "refId": "A"
         }
@@ -134,21 +134,29 @@
     },
     {
       "title": "Alert History",
-      "description": "Firing and pending alerts over time, grouped by alert name.",
+      "description": "Alert instance counts by state over time (from Grafana's internal alerting engine).",
       "type": "timeseries",
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "ALERTS{alertstate=~\"firing|pending\"}",
-          "legendFormat": "{{ alertname }} ({{ alertstate }})",
+          "expr": "grafana_alerting_alerts{job=\"grafana\"}",
+          "legendFormat": "{{ state }}",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "custom": { "fillOpacity": 30, "stacking": { "mode": "none" } }
-        }
+          "custom": { "fillOpacity": 30, "stacking": { "mode": "normal" } },
+          "unit": "short"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "normal" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }] },
+          { "matcher": { "id": "byName", "options": "alerting" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }] },
+          { "matcher": { "id": "byName", "options": "pending" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "yellow" } }] },
+          { "matcher": { "id": "byName", "options": "nodata" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "purple" } }] },
+          { "matcher": { "id": "byName", "options": "error" }, "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }] }
+        ]
       }
     },
     {
@@ -160,8 +168,13 @@
       "targets": [
         {
           "expr": "rate(prometheus_rule_evaluation_duration_seconds_sum[5m])",
-          "legendFormat": "{{ rule_group }}",
+          "legendFormat": "prom: {{ rule_group }}",
           "refId": "A"
+        },
+        {
+          "expr": "rate(grafana_alerting_rule_evaluation_duration_seconds_sum[5m])",
+          "legendFormat": "grafana: {{ rule_group }}",
+          "refId": "B"
         }
       ],
       "fieldConfig": {
@@ -180,8 +193,13 @@
       "targets": [
         {
           "expr": "rate(prometheus_rule_evaluation_failures_total[5m])",
-          "legendFormat": "{{ rule_group }}",
+          "legendFormat": "prom: {{ rule_group }}",
           "refId": "A"
+        },
+        {
+          "expr": "rate(grafana_alerting_rule_evaluation_attempt_failures_total[5m])",
+          "legendFormat": "grafana: {{ rule_group }}",
+          "refId": "B"
         }
       ],
       "fieldConfig": {
@@ -194,13 +212,13 @@
     },
     {
       "title": "Alert Detail",
-      "description": "Currently firing and pending alerts with full label detail.",
+      "description": "Current alert instance counts by state from Grafana's alerting engine.",
       "type": "table",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "ALERTS{alertstate=~\"firing|pending\"}",
+          "expr": "grafana_alerting_alerts{job=\"grafana\"}",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -210,17 +228,23 @@
         {
           "id": "organize",
           "options": {
-            "excludeByName": { "Time": true, "__name__": true, "Value": true },
+            "excludeByName": { "Time": true, "__name__": true, "Value": false, "instance": true, "job": true },
+            "renameByName": { "state": "State", "Value": "Count" },
             "indexByName": {
-              "alertname": 0,
-              "alertstate": 1,
-              "severity": 2,
-              "instance": 3,
-              "job": 4
+              "state": 0,
+              "Value": 1
             }
           }
         }
-      ]
+      ],
+      "fieldConfig": {
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Count" },
+            "properties": [{ "id": "custom.width", "value": 100 }]
+          }
+        ]
+      }
     }
   ],
   "refresh": "30s",

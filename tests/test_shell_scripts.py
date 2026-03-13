@@ -395,13 +395,39 @@ class TestAWSSetupScript:
         assert "AWS_REGION" in content
         assert "AWS_INSTANCE_TYPE" in content or "INSTANCE_TYPE" in content
 
-    def test_instance_scheduler_tag_set_to_running(self, script_files):
-        """EC2 must launch with Schedule=running to prevent the AWS Instance
-        Scheduler from stopping it.  Without this tag the instance stops
-        daily at 07:45 UTC."""
+    def test_no_instance_scheduler_tag(self, script_files):
+        """EC2 must NOT have a Schedule tag so the AWS Instance Scheduler
+        ignores it entirely — no scheduled stops or terminations."""
         content = script_files["setup_aws_worker.sh"]
-        assert "Schedule" in content
-        assert "Value=running" in content
+        assert "Key=Schedule" not in content
+
+    def test_termination_protection_enabled(self, script_files):
+        """EC2 must launch with --disable-api-termination to prevent
+        accidental termination."""
+        content = script_files["setup_aws_worker.sh"]
+        assert "--disable-api-termination" in content
+
+    def test_nginx_monitor_has_proxy_http_version(self, script_files):
+        """nginx-monitor.conf in user-data must set proxy_http_version 1.1
+        to avoid 426 Upgrade Required from SPCS Prometheus."""
+        content = script_files["setup_aws_worker.sh"]
+        assert content.count("proxy_http_version 1.1") >= 2
+
+    def test_nginx_monitor_has_connection_header(self, script_files):
+        """nginx-monitor.conf must clear Connection header for keepalive."""
+        content = script_files["setup_aws_worker.sh"]
+        assert 'proxy_set_header Connection ""' in content
+
+    def test_nginx_monitor_has_client_max_body_size(self, script_files):
+        """nginx-monitor.conf must allow large metric batches."""
+        content = script_files["setup_aws_worker.sh"]
+        assert "client_max_body_size 10m" in content
+
+    def test_no_unknown_defaults_in_external_labels(self, script_files):
+        """Prometheus v3 treats ${VAR:-default} as literal env var name.
+        Use ${VAR} without defaults in prometheus-agent.yml."""
+        content = script_files["setup_aws_worker.sh"]
+        assert ":-unknown" not in content
 
     def test_promtail_expand_env_enabled(self, script_files):
         """Promtail must use -config.expand-env=true for env var expansion."""

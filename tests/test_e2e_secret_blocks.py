@@ -156,12 +156,13 @@ class TestPatRotationFlowBlockIntegration:
 
 
 class TestMonitorSpecSlackSecret:
-    """Verify pf_monitor.yaml wires SLACK_WEBHOOK_URL secret to Grafana."""
+    """Verify pf_monitor.yaml has Slack webhook secret commented out (opt-in)."""
 
     @pytest.fixture(autouse=True)
     def _load_spec(self):
         spec_path = MONITORING_DIR / "specs" / "pf_monitor.yaml"
         self.spec = yaml.safe_load(spec_path.read_text())
+        self.raw = spec_path.read_text()
 
     def _get_grafana_container(self):
         for c in self.spec["spec"]["containers"]:
@@ -169,37 +170,30 @@ class TestMonitorSpecSlackSecret:
                 return c
         raise AssertionError("No grafana container in pf_monitor.yaml")
 
-    def test_grafana_has_slack_webhook_secret(self):
-        """Grafana container must mount SLACK_WEBHOOK_URL as GF_ALERTING_SLACK_WEBHOOK_URL."""
+    def test_slack_webhook_secret_is_commented_out(self):
+        """Slack secret mount must be commented out by default (SLACK_ENABLED=false)."""
         grafana = self._get_grafana_container()
         secrets = grafana.get("secrets", [])
         slack_secrets = [
             s for s in secrets if s.get("envVarName") == "GF_ALERTING_SLACK_WEBHOOK_URL"
         ]
-        assert len(slack_secrets) == 1, (
-            "pf_monitor.yaml: grafana must have GF_ALERTING_SLACK_WEBHOOK_URL secret"
+        assert len(slack_secrets) == 0, (
+            "GF_ALERTING_SLACK_WEBHOOK_URL must be commented out when Slack is disabled"
         )
 
-    def test_slack_secret_references_correct_snowflake_object(self):
-        grafana = self._get_grafana_container()
-        secrets = grafana.get("secrets", [])
-        slack_secret = next(
-            s for s in secrets if s.get("envVarName") == "GF_ALERTING_SLACK_WEBHOOK_URL"
-        )
-        sf_secret = slack_secret.get("snowflakeSecret", {})
-        assert sf_secret.get("objectName") == "slack_webhook_url", (
-            "Must reference Snowflake secret 'slack_webhook_url'"
-        )
+    def test_slack_config_exists_as_comment(self):
+        """The Slack secret config must exist as a comment for easy opt-in."""
+        assert "slack_webhook_url" in self.raw
+        assert "GF_ALERTING_SLACK_WEBHOOK_URL" in self.raw
 
-    def test_grafana_has_all_secrets(self):
-        """Grafana must mount all 7 Snowflake secrets."""
+    def test_grafana_has_all_active_secrets(self):
+        """Grafana must mount all 6 active Snowflake secrets (Slack excluded)."""
         grafana = self._get_grafana_container()
         secrets = grafana.get("secrets", [])
         expected_env_vars = {
             "GF_SECURITY_ADMIN_PASSWORD",
             "GF_DATABASE_URL",
             "GF_SMTP_PASSWORD",
-            "GF_ALERTING_SLACK_WEBHOOK_URL",
             "GF_SMTP_USER",
             "GF_SMTP_FROM_ADDRESS",
             "GF_SMTP_ALERT_RECIPIENTS",
@@ -209,17 +203,21 @@ class TestMonitorSpecSlackSecret:
             f"Grafana secrets mismatch. Expected: {expected_env_vars}, Got: {actual_env_vars}"
         )
 
-    def test_contact_points_has_slack_receiver(self):
-        """contactpoints.yaml must have a Slack receiver referencing GF_ALERTING_SLACK_WEBHOOK_URL."""
+    def test_contact_points_slack_is_commented(self):
+        """contactpoints.yaml must NOT have an active Slack receiver (opt-in only)."""
         cp_path = MONITORING_DIR / "grafana" / "provisioning" / "alerting" / "contactpoints.yaml"
         config = yaml.safe_load(cp_path.read_text())
         receivers = config.get("contactPoints", [{}])[0].get("receivers", [])
         slack_receivers = [r for r in receivers if r.get("type") == "slack"]
-        assert len(slack_receivers) >= 1, "contactpoints.yaml must have a Slack receiver"
-        slack_url = slack_receivers[0].get("settings", {}).get("url", "")
-        assert "GF_ALERTING_SLACK_WEBHOOK_URL" in slack_url, (
-            "Slack receiver must use ${GF_ALERTING_SLACK_WEBHOOK_URL} env var"
+        assert len(slack_receivers) == 0, (
+            "Slack receiver must be commented out by default"
         )
+
+    def test_contact_points_has_slack_instructions(self):
+        """contactpoints.yaml must contain instructions for enabling Slack."""
+        cp_path = MONITORING_DIR / "grafana" / "provisioning" / "alerting" / "contactpoints.yaml"
+        raw = cp_path.read_text()
+        assert "SLACK_ENABLED=true" in raw
 
 
 class TestGetSecretValueBehavior:

@@ -208,7 +208,15 @@ Check in the Prefect UI that the run completes successfully.
 
 ### 10. Tear down (when done)
 
+Instances launch with **termination protection enabled**. You must disable it first:
+
 ```bash
+aws ec2 modify-instance-attribute \
+  --instance-id <instance-id> \
+  --no-disable-api-termination \
+  --region us-west-2 \
+  --profile <AWS_PROFILE>
+
 aws ec2 terminate-instances \
   --instance-ids <instance-id> \
   --region us-west-2 \
@@ -317,10 +325,14 @@ ssh -p 2222 -i workers/aws/<YOUR_KEY_NAME>.pem ec2-user@localhost
 
 ### Running Instances
 
-| Pool | Instance ID | Private IP | Name Tag | Schedule Tag |
-|------|-------------|------------|----------|-------------|
-| `aws-pool` | `<PRIMARY_INSTANCE_ID>` | `<PRIMARY_PRIVATE_IP>` | `<YOUR_PREFIX>-prefect-worker-aws` | `running` |
-| `aws-pool-backup` | `<BACKUP_INSTANCE_ID>` | `<BACKUP_PRIVATE_IP>` | `<YOUR_PREFIX>-prefect-worker-aws-backup` | `running` |
+| Pool | Instance ID | Private IP | Name Tag |
+|------|-------------|------------|----------|
+| `aws-pool` | `<PRIMARY_INSTANCE_ID>` | `<PRIMARY_PRIVATE_IP>` | `<YOUR_PREFIX>-prefect-worker-aws` |
+| `aws-pool-backup` | `<BACKUP_INSTANCE_ID>` | `<BACKUP_PRIVATE_IP>` | `<YOUR_PREFIX>-prefect-worker-aws-backup` |
+
+> **No `Schedule` tag** — the AWS Instance Scheduler ignores untagged instances.
+> Combined with `--disable-api-termination`, the instance stays running and
+> cannot be accidentally terminated.
 
 Each instance runs 7 Docker containers:
 - `prefect-aws-prefect-worker-aws-1` — Prefect ProcessWorker polling its pool

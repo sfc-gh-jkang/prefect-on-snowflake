@@ -270,20 +270,20 @@ class TestReadmeGrafanaSmtpConfig:
 
 
 class TestReadmeSlackEgressDocs:
-    """Verify README documents Slack egress requirements."""
+    """Verify README documents Slack as opt-in with egress requirements."""
 
     @pytest.fixture(scope="class")
     def readme(self):
         return (PROJECT_DIR / "README.md").read_text()
+
+    def test_readme_documents_slack_as_opt_in(self, readme):
+        assert "SLACK_ENABLED" in readme
 
     def test_readme_documents_hooks_slack_com(self, readme):
         assert "hooks.slack.com" in readme
 
     def test_readme_documents_api_slack_com(self, readme):
         assert "api.slack.com" in readme
-
-    def test_readme_documents_slack_webhook_url_secret(self, readme):
-        assert "GF_ALERTING_SLACK_WEBHOOK_URL" in readme
 
 
 class TestReadmeTelemetryDocs:

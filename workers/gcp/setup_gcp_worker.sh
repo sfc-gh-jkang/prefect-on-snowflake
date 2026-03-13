@@ -6,15 +6,19 @@
 # Architecture:
 #   nginx auth-proxy (injects Snowflake PAT) → SPCS public endpoint
 #   prefect worker → http://auth-proxy:4200/api
+#   monitoring sidecars (node-exporter, cadvisor, prometheus-agent, promtail)
+#     → remote_write to SPCS Prometheus via auth-proxy-monitor
 #
 # Prerequisites:
 #   - gcloud CLI authenticated
 #   - SNOWFLAKE_PAT set to a Snowflake programmatic access token
 #   - SPCS_ENDPOINT set to the SPCS server hostname (no https://)
 #
-# Optional (enables monitoring sidecars):
-#   - SPCS_MONITOR_ENDPOINT set to PF_MONITOR Prometheus endpoint hostname
-#   - SPCS_MONITOR_LOKI_ENDPOINT set to PF_MONITOR Loki endpoint hostname
+# The .env on the VM must also have:
+#   - SPCS_MONITOR_ENDPOINT — PF_MONITOR Prometheus endpoint hostname
+#   - SPCS_MONITOR_LOKI_ENDPOINT — PF_MONITOR Loki endpoint hostname
+#   - WORKER_LOCATION — e.g. "gcp-us-central1"
+#   - WORKER_POOL — e.g. "gcp-pool"
 #
 # Usage:
 #   export SNOWFLAKE_PAT="ver:1:..."
@@ -33,10 +37,6 @@ ENDPOINT="${SPCS_ENDPOINT:?Set SPCS_ENDPOINT}"
 GIT_TOKEN="${GIT_ACCESS_TOKEN:?Set GIT_ACCESS_TOKEN}"
 GIT_URL="${GIT_REPO_URL:-https://github.com/your-org/your-repo.git}"
 GIT_REF="${GIT_BRANCH:-main}"
-
-# Monitoring endpoints (optional — monitoring sidecars start only when set)
-MONITOR_PROM="${SPCS_MONITOR_ENDPOINT:-}"
-MONITOR_LOKI="${SPCS_MONITOR_LOKI_ENDPOINT:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -94,26 +94,16 @@ gcloud compute scp \
     --project="$PROJECT" \
     --zone="$ZONE"
 
-# Build the compose command — include monitoring overlay if endpoints are set
-COMPOSE_CMD="docker compose -f docker-compose.gcp.yaml"
-COMPOSE_ENV="SNOWFLAKE_PAT='$PAT' SPCS_ENDPOINT='$ENDPOINT' GIT_ACCESS_TOKEN='$GIT_TOKEN' GIT_REPO_URL='$GIT_URL' GIT_BRANCH='$GIT_REF'"
-
-if [ -n "$MONITOR_PROM" ] && [ -n "$MONITOR_LOKI" ]; then
-    echo "Monitoring enabled — starting with monitoring sidecars"
-    COMPOSE_CMD="$COMPOSE_CMD -f docker-compose.monitoring.yml"
-    COMPOSE_ENV="$COMPOSE_ENV SPCS_MONITOR_ENDPOINT='$MONITOR_PROM' SPCS_MONITOR_LOKI_ENDPOINT='$MONITOR_LOKI' WORKER_LOCATION='gcp-${ZONE}' WORKER_POOL='gcp-pool' DNS_RESOLVER='8.8.8.8'"
-else
-    echo "Monitoring disabled — set SPCS_MONITOR_ENDPOINT and SPCS_MONITOR_LOKI_ENDPOINT to enable"
-fi
-
-# Start the services via Docker Compose
+# Always include monitoring overlay — .env on the VM has all needed vars.
+# docker-compose.monitoring.yml uses ${SPCS_MONITOR_ENDPOINT:?...} so it
+# will fail fast with a clear error if the var is missing from .env.
 gcloud compute ssh "$VM_NAME" \
     --project="$PROJECT" \
     --zone="$ZONE" \
     --command="cd /opt/prefect-gcp && \
-        export $COMPOSE_ENV && \
-        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v /opt/prefect-gcp:/workdir -w /workdir \
-            docker/compose:latest $COMPOSE_CMD up -d"
+        export SNOWFLAKE_PAT='$PAT' SPCS_ENDPOINT='$ENDPOINT' GIT_ACCESS_TOKEN='$GIT_TOKEN' GIT_REPO_URL='$GIT_URL' GIT_BRANCH='$GIT_REF' && \
+        set -a && source .env && set +a && \
+        docker compose -f docker-compose.gcp.yaml -f docker-compose.monitoring.yml up -d"
 
 echo ""
 echo "=== GCP worker VM created ==="

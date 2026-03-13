@@ -42,7 +42,7 @@
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "expr": "sum by(service) (rate({job=\"spcs-logs\", service=~\"$service\"} |~ \"(?i)(ERROR|FATAL|CRITICAL)\" [$__interval]))",
+          "expr": "sum by(service) (rate({job=\"spcs-logs\", service=~\"$service\", severity=~\"ERROR|FATAL|CRITICAL\"} [$__interval]))",
           "legendFormat": "{{ service }}",
           "refId": "A"
         }
@@ -106,7 +106,7 @@
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "expr": "{job=\"spcs-logs\", service=~\"$service\"} |~ \"(?i)(error|exception|fatal|panic|traceback)\"",
+          "expr": "{job=\"spcs-logs\", service=~\"$service\", severity=~\"ERROR|FATAL|CRITICAL\"}",
           "refId": "A"
         }
       ],

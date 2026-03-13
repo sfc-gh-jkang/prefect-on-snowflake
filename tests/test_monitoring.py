@@ -1281,17 +1281,15 @@ class TestDashboardVMWorkers:
         assert "1" in opts and opts["1"]["text"] == "REGISTERED"
 
     def test_vm_worker_status_narrowed_for_spcs_panel(self):
-        """VM Worker Status panel must be narrowed to make room for SPCS Worker.
+        """VM Worker Status panel uses repeat-by-worker_location.
 
-        Original width was 24 (full row). With the SPCS Worker panel beside
-        it, it must be < 24 to avoid overlap.
+        Each VM gets its own stat panel (w=6, maxPerRow=4).
+        The panel title is $worker_location (Grafana substitutes per-VM).
         """
-        panel = self.panels.get("VM Worker Status")
-        assert panel is not None
-        assert panel["gridPos"]["w"] < 24, (
-            f"VM Worker Status panel width must be < 24 to fit SPCS Worker, "
-            f"got: {panel['gridPos']['w']}"
-        )
+        panel = self.panels.get("$worker_location")
+        assert panel is not None, "Expected repeating '$worker_location' status panel"
+        assert panel.get("repeat") == "worker_location"
+        assert panel["gridPos"]["w"] <= 6
 
 
 # ---------------------------------------------------------------------------
@@ -1688,8 +1686,8 @@ class TestDashboardAlerts:
     def test_firing_alerts_queries_alerts_metric(self):
         panel = self.panels["Firing Alerts"]
         expr = panel["targets"][0]["expr"]
-        assert "ALERTS" in expr
-        assert "firing" in expr
+        assert "alerting_alerts" in expr
+        assert "alerting" in expr
 
     def test_has_pending_alerts_panel(self):
         assert "Pending Alerts" in self.panels
@@ -3869,7 +3867,9 @@ class TestGrafanaAlertingContactPoints:
     def test_slack_receiver_configured(self):
         cp = [c for c in self.config["contactPoints"] if c["name"] == "prefect-alerts"][0]
         receivers = cp["receivers"]
-        assert any(r["type"] == "slack" for r in receivers)
+        assert not any(r["type"] == "slack" for r in receivers), (
+            "Slack receiver must be commented out by default (SLACK_ENABLED=false)"
+        )
 
 
 class TestGrafanaAlertingPolicies:
@@ -4636,6 +4636,7 @@ class TestDashboardPanelCorrectness:
             "pg_stat_database_temp_bytes",
             "pg_exporter_last_scrape_duration_seconds",
             "pg_relation_size_bytes",
+            "pg_stat_user_tables_table_size_bytes",
             "loki_distributor_bytes_received_total",
             "loki_ingester_streams_created_total",
         }
@@ -5317,11 +5318,12 @@ class TestGrafanaProvisioningCompleteness:
             f"Contact point name '{cp_name}' != policy receiver '{policy_receiver}'"
         )
 
-    def test_contact_point_has_slack_and_email(self):
-        """Contact point should have slack and email receivers (no webhook)."""
+    def test_contact_point_has_email_only(self):
+        """Contact point should have email receiver only (Slack is opt-in, no webhook)."""
         receivers = self.cp["contactPoints"][0]["receivers"]
         types = {r["type"] for r in receivers}
-        assert "slack" in types and "email" in types
+        assert "email" in types
+        assert "slack" not in types, "Slack is opt-in and disabled by default"
         assert "webhook" not in types
 
     def test_policy_group_by_includes_alertname(self):
@@ -5883,10 +5885,10 @@ class TestGrafanaPostgresPersistence:
     def test_admin_password_injected_from_secret(self):
         assert "GF_SECURITY_ADMIN_PASSWORD" in self.secret_env_vars
 
-    def test_grafana_has_exactly_seven_secrets(self):
-        assert len(self.secrets) == 7, (
-            f"Grafana should have exactly 7 secrets (admin password + DB DSN + SMTP password + "
-            f"Slack webhook + SMTP user + SMTP from + SMTP recipients), "
+    def test_grafana_has_exactly_six_secrets(self):
+        assert len(self.secrets) == 6, (
+            f"Grafana should have 6 secrets (admin password + DB DSN + SMTP password + "
+            f"SMTP user + SMTP from + SMTP recipients; Slack is opt-in), "
             f"got {len(self.secrets)}: {self.secret_env_vars}"
         )
 
@@ -6183,9 +6185,8 @@ class TestFlowRunSuccessRatePromQL:
 class TestPostgresTableSizeMetric:
     """Validate Table Size panel uses the correct postgres-exporter metric.
 
-    The postgres-exporter exposes pg_relation_size_bytes, NOT
-    pg_total_relation_size_bytes. Using the wrong metric name causes
-    'no data' in the panel.
+    The postgres-exporter exposes pg_stat_user_tables_table_size_bytes.
+    Using a non-existent metric name causes 'no data' in the panel.
     """
 
     @pytest.fixture(autouse=True)
@@ -6194,8 +6195,8 @@ class TestPostgresTableSizeMetric:
         self.panel = next(p for p in self.dash["panels"] if p["title"] == "Table Size (Top 10)")
         self.expr = self.panel["targets"][0]["expr"]
 
-    def test_uses_pg_relation_size_bytes(self):
-        assert "pg_relation_size_bytes" in self.expr
+    def test_uses_pg_stat_user_tables_table_size_bytes(self):
+        assert "pg_stat_user_tables_table_size_bytes" in self.expr
 
     def test_does_not_use_pg_total_relation_size(self):
         """pg_total_relation_size_bytes is NOT exposed by postgres-exporter."""
@@ -7901,17 +7902,21 @@ class TestDeployScriptCreateSecretHelper:
         assert found_grant, "_create_secret must GRANT READ ON SECRET"
 
     def test_all_secrets_use_helper(self):
-        """All 4 secrets should be created via _create_secret calls."""
+        """Core secrets should be created via _create_secret calls."""
         expected = [
             "GRAFANA_ADMIN_PASSWORD",
             "GRAFANA_DB_DSN",
             "GRAFANA_SMTP_PASSWORD",
-            "SLACK_WEBHOOK_URL",
         ]
         for secret_name in expected:
             assert f"_create_secret {secret_name}" in self.content, (
                 f"Secret {secret_name} should be created via _create_secret helper"
             )
+
+    def test_slack_secret_is_conditional(self):
+        """SLACK_WEBHOOK_URL secret creation must be gated on SLACK_ENABLED."""
+        assert "SLACK_ENABLED" in self.content
+        assert "_create_secret SLACK_WEBHOOK_URL" in self.content
 
 
 # ===========================================================================
@@ -8018,11 +8023,11 @@ class TestMonitorSpecSmtpConfig:
         )
         assert smtp_secret.get("envVarName") == "GF_SMTP_PASSWORD"
 
-    def test_grafana_has_seven_secret_mounts(self):
-        """Grafana needs 7 secrets: admin password, DB DSN, SMTP password, Slack webhook, SMTP user, SMTP from, SMTP recipients."""
+    def test_grafana_has_six_secret_mounts_smtp(self):
+        """Grafana needs 6 active secrets (Slack webhook is opt-in)."""
         secrets = self.grafana.get("secrets", [])
-        assert len(secrets) == 7, (
-            f"Grafana should have 7 secret mounts, got {len(secrets)}: "
+        assert len(secrets) == 6, (
+            f"Grafana should have 6 secret mounts (Slack opt-in), got {len(secrets)}: "
             f"{[s.get('snowflakeSecret', {}).get('objectName') for s in secrets]}"
         )
 
@@ -8132,12 +8137,13 @@ class TestContactPointEmailReceiver:
         email = next(r for r in self.receivers if r["type"] == "email")
         assert email["settings"].get("singleEmail") is True
 
-    def test_has_slack_and_email(self):
+    def test_has_email_only(self):
         types = {r["type"] for r in self.receivers}
-        assert "slack" in types and "email" in types
+        assert "email" in types
+        assert "slack" not in types, "Slack is opt-in and disabled by default"
 
     def test_total_receiver_count(self):
-        assert len(self.receivers) == 2
+        assert len(self.receivers) == 1
 
 
 # ===========================================================================

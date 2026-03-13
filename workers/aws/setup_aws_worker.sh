@@ -6,14 +6,14 @@
 # Architecture:
 #   nginx auth-proxy (injects Snowflake PAT) → SPCS public endpoint
 #   prefect worker → http://auth-proxy:4200/api
+#   monitoring sidecars (node-exporter, cadvisor, prometheus-agent, promtail)
+#     → remote_write to SPCS Prometheus via auth-proxy-monitor
 #
 # Prerequisites:
 #   - AWS CLI v2 authenticated (profile with EC2 permissions)
 #   - SNOWFLAKE_PAT set to a Snowflake programmatic access token
 #   - SPCS_ENDPOINT set to the SPCS server hostname (no https://)
 #   - GIT_ACCESS_TOKEN set for private repo access
-#
-# Optional (enables monitoring sidecars):
 #   - SPCS_MONITOR_ENDPOINT set to PF_MONITOR Prometheus endpoint hostname
 #   - SPCS_MONITOR_LOKI_ENDPOINT set to PF_MONITOR Loki endpoint hostname
 #
@@ -55,7 +55,7 @@ SF_WAREHOUSE="${SNOWFLAKE_WAREHOUSE:-COMPUTE_WH}"
 SF_DATABASE="${SNOWFLAKE_DATABASE:-PREFECT_DB}"
 SF_SCHEMA="${SNOWFLAKE_SCHEMA:-PREFECT_SCHEMA}"
 
-# Monitoring endpoints (optional — monitoring sidecars start only when set)
+# Monitoring endpoints (required — sidecars always start with the worker)
 MONITOR_PROM="${SPCS_MONITOR_ENDPOINT:-}"
 MONITOR_LOKI="${SPCS_MONITOR_LOKI_ENDPOINT:-}"
 
@@ -262,9 +262,9 @@ DNS_RESOLVER=169.254.169.253
 ENVEOF
 chmod 600 .env
 
-# Write monitoring configs if monitoring endpoints are provided
-if [ -n "__SPCS_MONITOR_ENDPOINT__" ]; then
-    mkdir -p vm-agents
+# Always write monitoring configs — .env has all needed vars.
+# docker-compose.monitoring.yml validates via ${SPCS_MONITOR_ENDPOINT:?...}.
+mkdir -p vm-agents
 
     # nginx auth-proxy for monitoring traffic
     cat > vm-agents/nginx-monitor.conf <<'NGINXMONEOF'
@@ -285,31 +285,39 @@ http {
 
     server {
         listen 4210;
+
         location / {
             proxy_pass https://${SPCS_MONITOR_ENDPOINT}:443;
+            proxy_http_version 1.1;
             proxy_ssl_server_name on;
             proxy_ssl_name ${SPCS_MONITOR_ENDPOINT};
             proxy_set_header Host ${SPCS_MONITOR_ENDPOINT};
             proxy_set_header Authorization "Snowflake Token=\"${SNOWFLAKE_PAT}\"";
+            proxy_set_header Connection "";
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_connect_timeout 10s;
             proxy_send_timeout 30s;
             proxy_read_timeout 30s;
+            client_max_body_size 10m;
         }
     }
 
     server {
         listen 4220;
+
         location / {
             proxy_pass https://${SPCS_MONITOR_LOKI_ENDPOINT}:443;
+            proxy_http_version 1.1;
             proxy_ssl_server_name on;
             proxy_ssl_name ${SPCS_MONITOR_LOKI_ENDPOINT};
             proxy_set_header Host ${SPCS_MONITOR_LOKI_ENDPOINT};
             proxy_set_header Authorization "Snowflake Token=\"${SNOWFLAKE_PAT}\"";
+            proxy_set_header Connection "";
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_connect_timeout 10s;
             proxy_send_timeout 30s;
             proxy_read_timeout 30s;
+            client_max_body_size 10m;
         }
     }
 }
@@ -321,8 +329,8 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    worker_location: "${WORKER_LOCATION:-unknown}"
-    worker_pool: "${WORKER_POOL:-unknown}"
+    worker_location: "${WORKER_LOCATION}"
+    worker_pool: "${WORKER_POOL}"
 
 scrape_configs:
   - job_name: node-exporter
@@ -365,8 +373,8 @@ positions:
 clients:
   - url: "http://auth-proxy-monitor:4220/loki/api/v1/push"
     external_labels:
-      worker_location: "${WORKER_LOCATION:-unknown}"
-      worker_pool: "${WORKER_POOL:-unknown}"
+      worker_location: "${WORKER_LOCATION}"
+      worker_pool: "${WORKER_POOL}"
 
 scrape_configs:
   - job_name: docker
@@ -441,8 +449,8 @@ services:
     volumes:
       - ./vm-agents/prometheus-agent.yml:/etc/prometheus/prometheus-agent.yml:ro
     environment:
-      WORKER_LOCATION: "${WORKER_LOCATION:-unknown}"
-      WORKER_POOL: "${WORKER_POOL:-unknown}"
+      WORKER_LOCATION: "${WORKER_LOCATION}"
+      WORKER_POOL: "${WORKER_POOL}"
     depends_on:
       - node-exporter
       - cadvisor
@@ -459,21 +467,16 @@ services:
       - /var/lib/docker/containers:/var/log/containers:ro
       - /tmp/promtail-positions:/tmp
     environment:
-      WORKER_LOCATION: "${WORKER_LOCATION:-unknown}"
-      WORKER_POOL: "${WORKER_POOL:-unknown}"
+      WORKER_LOCATION: "${WORKER_LOCATION}"
+      WORKER_POOL: "${WORKER_POOL}"
     depends_on:
       - auth-proxy-monitor
     restart: unless-stopped
 MONCOMPOSEEOF
-fi
 
-# Start services — include monitoring overlay if configured
-if [ -n "__SPCS_MONITOR_ENDPOINT__" ] && [ -f docker-compose.monitoring.yml ]; then
-    echo "Starting with monitoring sidecars..."
-    docker compose -f docker-compose.aws.yaml -f docker-compose.monitoring.yml up -d --build
-else
-    docker compose -f docker-compose.aws.yaml up -d --build
-fi
+# Always start with monitoring overlay — .env has all needed vars
+echo "Starting worker + monitoring sidecars..."
+docker compose -f docker-compose.aws.yaml -f docker-compose.monitoring.yml up -d --build
 
 echo "=== Prefect worker bootstrap complete ==="
 OUTEREOF
@@ -507,7 +510,8 @@ INSTANCE_ID=$(aws ec2 run-instances \
     --subnet-id "$SUBNET_ID" \
     --security-group-ids "$SECURITY_GROUP_ID" \
     --user-data "$USER_DATA" \
-    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$INSTANCE_NAME},{Key=Schedule,Value=running}]" \
+    --disable-api-termination \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$INSTANCE_NAME}]" \
     --query 'Instances[0].InstanceId' \
     --output text)
 
@@ -540,5 +544,6 @@ echo ""
 echo "To check worker status (via SSM):"
 echo "  aws ssm send-command --instance-ids $INSTANCE_ID --document-name AWS-RunShellScript --parameters 'commands=[\"cd /opt/prefect-aws && docker compose -f docker-compose.aws.yaml logs --tail 30\"]' --region $AWS_REGION --profile $AWS_PROFILE"
 echo ""
-echo "To terminate:"
+echo "To terminate (requires disabling termination protection first):"
+echo "  aws ec2 modify-instance-attribute --instance-id $INSTANCE_ID --no-disable-api-termination --region $AWS_REGION --profile $AWS_PROFILE"
 echo "  aws ec2 terminate-instances --instance-ids $INSTANCE_ID --region $AWS_REGION --profile $AWS_PROFILE"

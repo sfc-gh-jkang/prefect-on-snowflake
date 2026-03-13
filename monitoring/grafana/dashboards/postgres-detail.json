@@ -81,7 +81,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "topk(10, pg_relation_size_bytes{job=\"postgres\"})",
+          "expr": "topk(10, pg_stat_user_tables_table_size_bytes{job=\"postgres\"})",
           "legendFormat": "{{ relname }}",
           "refId": "A"
         }
