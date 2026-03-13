@@ -9,7 +9,7 @@
 #
 # Safe to run multiple times — all DROP statements use IF EXISTS.
 # =============================================================================
-set -uo pipefail
+set -euo pipefail
 
 CONN=""
 FULL=false

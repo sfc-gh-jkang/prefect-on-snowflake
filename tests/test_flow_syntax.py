@@ -322,10 +322,10 @@ class TestFlowSpecDataclass:
         assert "alerting" in fs.tags
 
     def test_alert_test_has_should_fail_parameter(self):
-        """alert-test must default to should_fail=True so it triggers alerts."""
+        """alert-test must default to should_fail=False (only fails when explicitly triggered)."""
         fs = next(f for f in self.FLOW_REGISTRY if f.name == "alert-test")
         assert fs.parameters is not None
-        assert fs.parameters.get("should_fail") is True
+        assert fs.parameters.get("should_fail") is False
 
     def test_alert_test_has_no_schedule(self):
         """alert-test must NOT have a schedule — it should only run manually."""

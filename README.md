@@ -453,7 +453,7 @@ PREFECT_API_URL=http://localhost:4202/api \
   bash -c 'cd flows && uv run --project .. prefect deploy --all --prefect-file ../prefect.yaml'
 ```
 
-This registers all 45 deployments (9 flows × 5 pools) with the Prefect server. Workers
+This registers all 64 deployments (10 flows × 7 pools, minus pools where certain flows are excluded) with the Prefect server. Workers
 clone the repo at runtime via `git_clone` pull steps.
 
 Three options for delivering flow **code** to workers:
@@ -507,7 +507,7 @@ This project uses Prefect's standard `prefect.yaml` for deployment registration 
 a custom Python script. Benefits:
 
 - **Standard Prefect workflow** — `prefect deploy --all` is the documented way to register deployments
-- **Declarative** — all 45 deployments visible in one YAML file, easy to diff and review
+- **Declarative** — all 64 deployments visible in one YAML file, easy to diff and review
 - **Forward-compatible** — new Prefect features (triggers, SLAs, etc.) will work natively
 - **No custom code** — no need to maintain deployment logic in Python
 
@@ -2161,7 +2161,7 @@ The hook chain is: ruff → ruff-format → shellcheck → detect-secrets. Commo
 
 All planned features have been implemented:
 
-- **Core**: Git-based flow delivery, `prefect.yaml` declarative deployments (10 flows x 5 pools), `pools.yaml`-driven extensibility
+- **Core**: Git-based flow delivery, `prefect.yaml` declarative deployments (10 flows x 7 pools), `pools.yaml`-driven extensibility
 - **CI/CD**: GitLab pipeline (lint, test, secret detection, SAST, build, deploy, e2e), UV cache, code coverage, monitoring image builds
 - **Hybrid Workers**: GCP + AWS with auth-proxy sidecar, headless EC2 provisioning, DR/backup pools
 - **Security**: PAT role restriction, secrets rotation, SSRF/SQL injection protections, pre-commit hooks

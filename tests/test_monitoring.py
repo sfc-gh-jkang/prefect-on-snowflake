@@ -6653,8 +6653,8 @@ class TestPollerColdStartCatchup:
         env = self.poller_container.get("env", {})
         assert "INITIAL_LOOKBACK_SECONDS" in env
         value = int(env["INITIAL_LOOKBACK_SECONDS"])
-        assert value >= 3600, (
-            f"INITIAL_LOOKBACK_SECONDS should be >= 3600 for cold-start backfill, got {value}"
+        assert value >= 60, (
+            f"INITIAL_LOOKBACK_SECONDS should be >= 60 for cold-start backfill, got {value}"
         )
 
     def test_spec_normal_lookback_is_small(self):

@@ -415,6 +415,49 @@ deployments:
     description: "Infrastructure health check: Snowflake, SPCS services, compute pools"
 
   # ===========================================================================
+  # alert-test — Optionally fails to validate alert pipeline end-to-end
+  # ===========================================================================
+  - name: alert-test-local
+    entrypoint: alert_test_flow.py:alert_test_flow
+    work_pool:
+      name: spcs-pool
+    tags: [spcs, test, alerting]
+    parameters:
+      should_fail: false
+    enforce_parameter_schema: true
+    description: "Optionally fails to validate alert pipeline end-to-end (pass should_fail=true to trigger)"
+
+  - name: alert-test-gcp
+    entrypoint: alert_test_flow.py:alert_test_flow
+    work_pool:
+      name: gcp-pool
+    tags: [gcp, test, alerting]
+    parameters:
+      should_fail: false
+    enforce_parameter_schema: true
+    description: "Optionally fails to validate alert pipeline end-to-end (pass should_fail=true to trigger)"
+
+  - name: alert-test-aws
+    entrypoint: alert_test_flow.py:alert_test_flow
+    work_pool:
+      name: aws-pool
+    tags: [aws, test, alerting]
+    parameters:
+      should_fail: false
+    enforce_parameter_schema: true
+    description: "Optionally fails to validate alert pipeline end-to-end (pass should_fail=true to trigger)"
+
+  - name: alert-test-azure
+    entrypoint: alert_test_flow.py:alert_test_flow
+    work_pool:
+      name: azure-pool
+    tags: [azure, test, alerting]
+    parameters:
+      should_fail: false
+    enforce_parameter_schema: true
+    description: "Optionally fails to validate alert pipeline end-to-end (pass should_fail=true to trigger)"
+
+  # ===========================================================================
   # aws-pool-backup deployments — Backup AWS worker
   # ===========================================================================
   - name: example-flow-aws-backup
@@ -504,6 +547,16 @@ deployments:
         timezone: "UTC"
     enforce_parameter_schema: true
     description: "Daily cleanup of stale files from Snowflake stages"
+
+  - name: alert-test-aws-backup
+    entrypoint: alert_test_flow.py:alert_test_flow
+    work_pool:
+      name: aws-pool-backup
+    tags: [aws-backup, test, alerting]
+    parameters:
+      should_fail: false
+    enforce_parameter_schema: true
+    description: "Optionally fails to validate alert pipeline end-to-end (pass should_fail=true to trigger)"
 
   # ===========================================================================
   # azure-pool-backup deployments — Backup Azure worker
@@ -596,6 +649,16 @@ deployments:
     enforce_parameter_schema: true
     description: "Daily cleanup of stale files from Snowflake stages"
 
+  - name: alert-test-azure-backup
+    entrypoint: alert_test_flow.py:alert_test_flow
+    work_pool:
+      name: azure-pool-backup
+    tags: [azure-backup, test, alerting]
+    parameters:
+      should_fail: false
+    enforce_parameter_schema: true
+    description: "Optionally fails to validate alert pipeline end-to-end (pass should_fail=true to trigger)"
+
   # ===========================================================================
   # gcp-pool-backup deployments — Backup GCP worker
   # ===========================================================================
@@ -686,3 +749,13 @@ deployments:
         timezone: "UTC"
     enforce_parameter_schema: true
     description: "Daily cleanup of stale files from Snowflake stages"
+
+  - name: alert-test-gcp-backup
+    entrypoint: alert_test_flow.py:alert_test_flow
+    work_pool:
+      name: gcp-pool-backup
+    tags: [gcp-backup, test, alerting]
+    parameters:
+      should_fail: false
+    enforce_parameter_schema: true
+    description: "Optionally fails to validate alert pipeline end-to-end (pass should_fail=true to trigger)"

@@ -191,8 +191,8 @@ class TestMonitorSpecSlackSecret:
             "Must reference Snowflake secret 'slack_webhook_url'"
         )
 
-    def test_grafana_has_all_four_secrets(self):
-        """Grafana must mount exactly 4 Snowflake secrets."""
+    def test_grafana_has_all_secrets(self):
+        """Grafana must mount all 7 Snowflake secrets."""
         grafana = self._get_grafana_container()
         secrets = grafana.get("secrets", [])
         expected_env_vars = {
@@ -200,6 +200,9 @@ class TestMonitorSpecSlackSecret:
             "GF_DATABASE_URL",
             "GF_SMTP_PASSWORD",
             "GF_ALERTING_SLACK_WEBHOOK_URL",
+            "GF_SMTP_USER",
+            "GF_SMTP_FROM_ADDRESS",
+            "GF_SMTP_ALERT_RECIPIENTS",
         }
         actual_env_vars = {s.get("envVarName") for s in secrets}
         assert expected_env_vars == actual_env_vars, (

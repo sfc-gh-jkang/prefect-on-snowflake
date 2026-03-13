@@ -151,6 +151,18 @@ EXPECTED_FLOWS = [
         # SPCS-only: checks SHOW SERVICES / compute pools — meaningless on external workers
         "pools": ["spcs"],
     },
+    {
+        "base_name": "alert-test",
+        "entrypoint_file": "alert_test_flow.py",
+        "func": "alert_test_flow",
+        "flow_name": "alert-test",
+        "tags_contain": ["test", "alerting"],
+        "parameters": {"should_fail": False},
+        "func_params": {"should_fail": bool},
+        "func_defaults": {"should_fail": False},
+        "schedule_type": None,
+        "has_concurrency": False,
+    },
 ]
 
 POOL_SUFFIXES = {key: cfg["suffix"] for key, cfg in POOLS.items()}
@@ -583,6 +595,7 @@ class TestMultiFolderEntrypoints:
             "data_quality_flow.py",
             "stage_cleanup_flow.py",
             "health_check_flow.py",
+            "alert_test_flow.py",
         ],
         "subfolder": ["analytics/revenue_flow.py"],
         "deep_subfolder": ["analytics/reports/quarterly_flow.py"],

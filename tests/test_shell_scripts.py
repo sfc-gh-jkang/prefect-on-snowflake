@@ -75,9 +75,16 @@ class TestBuildAndPush:
         assert "spcs image-registry login" in content
 
     def test_no_postgres_build(self, script_files):
-        """Postgres is Snowflake-managed; no SPCS image build needed."""
+        """No custom Postgres Dockerfile build — we pull stock images only."""
         content = script_files["build_and_push.sh"]
-        assert "postgres" not in content.lower() or "postgres:" not in content
+        assert (
+            "docker buildx build" not in content.split("postgres")[0].split("postgres")[-1]
+            or "Dockerfile" not in content.lower().split("postgres")[0]
+        )
+        lines = content.splitlines()
+        for line in lines:
+            if "postgres" in line.lower() and "buildx build" in line:
+                raise AssertionError(f"Postgres should not have a custom build step: {line}")
 
     def test_builds_redis(self, script_files):
         content = script_files["build_and_push.sh"]
@@ -698,11 +705,20 @@ class TestNoHardcodedSecrets:
                 )
 
     def test_no_hardcoded_passwords_in_sql(self):
-        """SQL files must not contain literal secrets (templates use placeholders)."""
+        """SQL template files must not contain literal secrets (templates use placeholders).
+        Skips local-only filled-in files (e.g. 03_setup_secrets.sql) which are gitignored."""
         from conftest import SQL_DIR  # noqa: E402
 
         secret_patterns = ["eyJ", "glpat-", "ghp_"]
-        for sql_file in list(SQL_DIR.glob("*.sql")) + list(SQL_DIR.glob("*.sql.template")):
+        for sql_file in SQL_DIR.glob("*.sql.template"):
+            content = sql_file.read_text()
+            for pattern in secret_patterns:
+                assert pattern not in content, (
+                    f"{sql_file.name}: contains hardcoded secret pattern '{pattern}'"
+                )
+        for sql_file in SQL_DIR.glob("*.sql"):
+            if sql_file.stem.endswith("_secrets"):
+                continue
             content = sql_file.read_text()
             for pattern in secret_patterns:
                 assert pattern not in content, (
