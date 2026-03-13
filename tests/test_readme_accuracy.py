@@ -267,3 +267,51 @@ class TestReadmeGrafanaSmtpConfig:
 
     def test_readme_documents_grafana_smtp_recipients_env_var(self, readme):
         assert "GRAFANA_SMTP_RECIPIENTS" in readme
+
+
+class TestReadmeSlackEgressDocs:
+    """Verify README documents Slack egress requirements."""
+
+    @pytest.fixture(scope="class")
+    def readme(self):
+        return (PROJECT_DIR / "README.md").read_text()
+
+    def test_readme_documents_hooks_slack_com(self, readme):
+        assert "hooks.slack.com" in readme
+
+    def test_readme_documents_api_slack_com(self, readme):
+        assert "api.slack.com" in readme
+
+    def test_readme_documents_slack_webhook_url_secret(self, readme):
+        assert "GF_ALERTING_SLACK_WEBHOOK_URL" in readme
+
+
+class TestReadmeTelemetryDocs:
+    """Verify README documents Prefect server telemetry silencing."""
+
+    @pytest.fixture(scope="class")
+    def readme(self):
+        return (PROJECT_DIR / "README.md").read_text()
+
+    def test_readme_documents_analytics_env_var(self, readme):
+        assert "PREFECT_SERVER_ANALYTICS_ENABLED" in readme
+
+    def test_readme_mentions_api_prefect_io(self, readme):
+        assert "api.prefect.io" in readme
+
+
+class TestReadmeContactPointCleanup:
+    """Verify README documents deleteContactPoints provisioning cleanup."""
+
+    @pytest.fixture(scope="class")
+    def readme(self):
+        return (PROJECT_DIR / "README.md").read_text()
+
+    def test_readme_documents_delete_contact_points(self, readme):
+        assert "deleteContactPoints" in readme
+
+    def test_readme_documents_webhook_receiver_cleanup(self, readme):
+        assert "webhook-receiver" in readme
+
+    def test_readme_documents_hooks_example_placeholder(self, readme):
+        assert "hooks.example.com" in readme

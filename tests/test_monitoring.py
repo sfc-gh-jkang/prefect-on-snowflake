@@ -583,6 +583,18 @@ class TestMonitoringCrossFileConsistency:
         env = server_spec["spec"]["containers"][0].get("env", {})
         assert env.get("PREFECT_SERVER_METRICS_ENABLED") == "true"
 
+    def test_pf_server_has_analytics_disabled(self):
+        """Prefect telemetry is disabled to avoid 'Failed to send telemetry' noise in SPCS."""
+        server_spec = yaml.safe_load((PROJECT_DIR / "specs" / "pf_server.yaml").read_text())
+        env = server_spec["spec"]["containers"][0].get("env", {})
+        assert env.get("PREFECT_SERVER_ANALYTICS_ENABLED") == "false"
+
+    def test_pf_services_has_analytics_disabled(self):
+        """pf_services must also disable analytics to prevent telemetry noise."""
+        svc_spec = yaml.safe_load((PROJECT_DIR / "specs" / "pf_services.yaml").read_text())
+        env = svc_spec["spec"]["containers"][0].get("env", {})
+        assert env.get("PREFECT_SERVER_ANALYTICS_ENABLED") == "false"
+
     def test_pf_worker_has_endpoints_section(self):
         """PF_WORKER must have an endpoints section for SPCS internal DNS routing.
 

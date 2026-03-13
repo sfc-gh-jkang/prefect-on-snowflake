@@ -42,6 +42,7 @@ redis (healthy) ─────────────────────�
 - **Snowflake Postgres**: SPCS services reach `*.postgres.snowflake.app:5432` via PREFECT_PG_EAI
 - **Public ingress**: PF_SERVER exposes port 4200 with `public: true` endpoint
 - **External egress**: PF_WORKER has EAI for outbound HTTPS to approved hosts
+- **Monitoring egress**: PF_MONITOR has EAI for `smtp.gmail.com:587`, `hooks.slack.com:443`, `api.slack.com:443`, Postgres host, `discord.com:443`
 
 ### Hybrid Workers
 

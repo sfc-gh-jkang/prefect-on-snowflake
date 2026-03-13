@@ -3,6 +3,12 @@
 # Set GF_SMTP_* environment variables on the Grafana container to enable email.
 apiVersion: 1
 
+deleteContactPoints:
+  - orgId: 1
+    uid: webhook-receiver
+  - orgId: 1
+    uid: ""
+
 contactPoints:
   - orgId: 1
     name: prefect-alerts

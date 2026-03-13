@@ -377,11 +377,19 @@ class TestSpecCommands:
 
     def test_server_binds_all_interfaces(self, spec_files):
         cmd = spec_files["pf_server"]["spec"]["containers"][0].get("command", [])
-        # Should have --host 0.0.0.0 or HOST env var
         env = spec_files["pf_server"]["spec"]["containers"][0].get("env", {})
         has_host_flag = "0.0.0.0" in cmd
         has_host_env = env.get("PREFECT_SERVER_API_HOST") == "0.0.0.0"
         assert has_host_flag or has_host_env, "Server must bind to 0.0.0.0"
+
+    def test_server_disables_analytics(self, spec_files):
+        """SPCS cannot reach api.prefect.io — analytics must be disabled."""
+        env = spec_files["pf_server"]["spec"]["containers"][0].get("env", {})
+        assert env.get("PREFECT_SERVER_ANALYTICS_ENABLED") == "false"
+
+    def test_services_disables_analytics(self, spec_files):
+        env = spec_files["pf_services"]["spec"]["containers"][0].get("env", {})
+        assert env.get("PREFECT_SERVER_ANALYTICS_ENABLED") == "false"
 
 
 class TestPostgresSpec:

@@ -143,6 +143,13 @@ class TestSpecToSpecConsistency:
                 f"server={server_env.get(key)}, services={services_env.get(key)}"
             )
 
+    def test_server_and_services_share_analytics_config(self, specs):
+        """pf_server and pf_services must both disable analytics."""
+        server_env = specs["pf_server"]["spec"]["containers"][0]["env"]
+        services_env = specs["pf_services"]["spec"]["containers"][0]["env"]
+        assert server_env.get("PREFECT_SERVER_ANALYTICS_ENABLED") == "false"
+        assert services_env.get("PREFECT_SERVER_ANALYTICS_ENABLED") == "false"
+
 
 # ---------------------------------------------------------------------------
 # Infrastructure: SQL ↔ Spec ↔ Script consistency

@@ -19,6 +19,7 @@ spec:
         PREFECT_REDIS_MESSAGING_PORT: "6379"
         PREFECT_REDIS_MESSAGING_DB: "0"
         PREFECT_SERVER_METRICS_ENABLED: "true"
+        PREFECT_SERVER_ANALYTICS_ENABLED: "false"
       secrets:
         - snowflakeSecret:
             objectName: prefect_db_password

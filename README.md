@@ -2118,6 +2118,44 @@ Grafana sends alert emails via Gmail SMTP using a Google App Password:
 To change recipients, edit `GF_SMTP_ALERT_RECIPIENTS` in `monitoring/specs/pf_monitor.yaml`.
 The `MONITOR_EGRESS_RULE` network rule must include `smtp.gmail.com:587` for outbound access.
 
+### Slack Alerting (Incoming Webhook)
+
+Grafana posts Slack alerts via a Slack incoming webhook URL stored in the `SLACK_WEBHOOK_URL`
+Snowflake secret, injected as `GF_ALERTING_SLACK_WEBHOOK_URL`. The `MONITOR_EGRESS_RULE`
+must include **both** Slack endpoints:
+
+| Host | Port | Purpose |
+|------|------|---------|
+| `hooks.slack.com` | 443 | Incoming webhook delivery |
+| `api.slack.com` | 443 | Grafana channel-name resolution |
+
+Without `api.slack.com:443`, Grafana's Slack contact point fails with DNS resolution errors
+every alert evaluation cycle (~5 min). The `deploy_monitoring.sh` script creates the rule
+with both entries.
+
+### Prefect Server Telemetry
+
+Prefect server phones home to `api.prefect.io` for analytics. In SPCS, this host is not
+reachable (no egress rule), causing `Failed to send telemetry` log noise every ~10 minutes.
+Both `pf_server.yaml` and `pf_services.yaml` set:
+
+```yaml
+PREFECT_SERVER_ANALYTICS_ENABLED: "false"
+```
+
+To re-enable, set `PREFECT_SERVER_ANALYTICS_ENABLED=true` in `.env` and add
+`api.prefect.io:443` to the server's egress rule.
+
+### Contact Point Provisioning Cleanup
+
+The `contactpoints.yaml` provisioning file includes a `deleteContactPoints` section that
+removes stale receivers on Grafana startup:
+
+- `webhook-receiver` — placeholder URL (`hooks.example.com`) from an earlier config version
+- `""` (empty UID) — Grafana's default `email receiver` with `<example@email.com>`
+
+Only the `prefect-alerts` contact point (Slack + email) remains active.
+
 ### SPCS OAuth Token Limitations
 
 Containers get an OAuth token at `/snowflake/session/token`, but it does **not** inherit

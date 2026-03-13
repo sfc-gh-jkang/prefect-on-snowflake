@@ -65,6 +65,7 @@ snow sql -q "
     TYPE = HOST_PORT
     VALUE_LIST = (
       'hooks.slack.com:443',
+      'api.slack.com:443',
       'discord.com:443',
       'smtp.gmail.com:587'${PG_RULE_ENTRY}
     )
