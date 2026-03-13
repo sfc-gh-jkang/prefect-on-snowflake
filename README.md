@@ -761,6 +761,62 @@ run_deployment('my-flow/my-flow-local', parameters={'region': 'eu-west', 'dry_ru
 "
 ```
 
+### Deploying via deploy.py (Recommended)
+
+`flows/deploy.py` is the primary deployment tool. It reads `pools.yaml` for pool
+configuration, authenticates to each cloud's SPCS endpoint via PAT, and registers
+deployments with correct pull steps per pool type.
+
+```bash
+# Load .env (required — deploy.py reads per-cloud endpoints and PATs from env)
+set -a && source .env && set +a
+
+# Deploy a single flow to one cloud
+uv run python flows/deploy.py --cloud aws --name alert-test --pool aws
+
+# Deploy all flows to all pools on a single cloud
+uv run python flows/deploy.py --cloud aws --all
+
+# Deploy all flows to all pools on ALL 3 clouds
+uv run python flows/deploy.py --cloud all --all
+
+# Deploy to multiple specific clouds
+uv run python flows/deploy.py --cloud aws --cloud gcp --all
+
+# Show what would change without deploying (plan-style diff)
+uv run python flows/deploy.py --cloud aws --diff
+
+# Validate all registry entries offline (no server connection needed)
+uv run python flows/deploy.py --validate
+```
+
+**How `--cloud` works:**
+
+The `--cloud` flag reads per-cloud connection info from `.env`:
+
+| `.env` Variable | Purpose |
+|-----------------|---------|
+| `SPCS_ENDPOINT_AWS` | SPCS public endpoint hostname for AWS |
+| `SPCS_ENDPOINT_AZURE` | SPCS public endpoint hostname for Azure |
+| `SPCS_ENDPOINT_GCP` | SPCS public endpoint hostname for GCP |
+| `SNOWFLAKE_PAT_AWS` | PAT for AWS SPCS auth |
+| `SNOWFLAKE_PAT_AZURE` | PAT for Azure SPCS auth |
+| `SNOWFLAKE_PAT_GCP` | PAT for GCP SPCS auth |
+
+Without `--cloud`, deploy.py uses `PREFECT_API_URL` and `SNOWFLAKE_PAT` from the
+environment (typically set via auth-proxy on `localhost:4202`).
+
+**Key flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--cloud <name>` | Target cloud(s): `aws`, `azure`, `gcp`, or `all` (repeatable) |
+| `--name <flow>` | Deploy a single flow by name |
+| `--pool <pool>` | Deploy to a specific pool only |
+| `--all` | Deploy all flows to all pools |
+| `--diff` | Show what would change without deploying |
+| `--validate` | Offline validation only (no server needed) |
+
 ### Flow Import Patterns
 
 Flows can use three import patterns, all tested in `analytics/reports/quarterly_flow.py`:
@@ -788,6 +844,20 @@ uv run pytest -m local
 # Run E2E tests (requires live SPCS cluster + SNOWFLAKE_PAT for auth)
 PREFECT_SPCS_API_URL=https://<endpoint>/api SNOWFLAKE_PAT=<pat> uv run pytest -m e2e
 ```
+
+### Test Coverage by Area
+
+| Test File | Tests | What It Covers |
+|-----------|-------|----------------|
+| `test_shell_scripts.py` | 100+ | All shell scripts: rotate_secrets.sh (--all-clouds, --smtp, 7-option menu, 9 secrets, helpers, macOS compat), deploy.sh, sync_flows.sh, update_versions.sh |
+| `test_deploy_units.py` | 50+ | deploy.py: _build_pull_steps, _parse_args (--cloud, --pool, --all, --name, --validate, --diff), CLOUD_CONFIGS, TriggerSpec, _validate, _sync_stage |
+| `test_monitoring.py` | 600+ | Full monitoring stack: Prometheus, Grafana, Loki, SMTP config, email alerting, deploy_monitoring.sh SMTP validation, secrets template, .env.example |
+| `test_readme_accuracy.py` | 40+ | README accuracy: deploy.py --cloud documented, rotate_secrets.sh flags documented, SMTP troubleshooting, Quick Operations Reference, per-cloud env vars |
+| `test_pat_rotation.py` | 50+ | PAT rotation flow: JWT decoding, consumer inventory, .env updates, SQL generation, GitLab API, Snowflake secrets, compose integrity |
+| `test_cross_file_consistency.py` | 30+ | Pull step env vars match across prefect.yaml and all worker compose files |
+| `test_prefect_yaml.py` | 60+ | prefect.yaml: deployment entries, schedules, work pools, pull steps |
+| `test_flow_syntax.py` | 70+ | Flow file syntax: imports, decorators, parameters, type hints |
+| `test_spec_schemas.py` | 30+ | SPCS spec YAML: container schemas, secrets, volumes, CPU limits |
 
 ## CI/CD (GitLab)
 
@@ -838,31 +908,93 @@ The `.gitlab-ci.yml` defines five stages:
 
 ## Secrets Rotation
 
-The project uses two Snowflake secret objects (`PREFECT_DB_PASSWORD`, `GIT_ACCESS_TOKEN`) and a local PAT in `.env`. Use `scripts/rotate_secrets.sh` to rotate them safely.
+The project manages **9 Snowflake secret objects** per cloud plus local PATs in `.env`.
+Use `scripts/rotate_secrets.sh` to rotate them safely across all clouds in one shot.
 
 ```bash
-# Check status and PAT expiry (read-only)
-./scripts/rotate_secrets.sh --connection aws_spcs --check
+# Check ALL secrets, SMTP login, and PAT expiry across all clouds (read-only)
+./scripts/rotate_secrets.sh --all-clouds --check
 
-# Rotate a secret interactively
+# Rotate Gmail App Password on all clouds (non-interactive, one-shot fix)
+./scripts/rotate_secrets.sh --all-clouds --smtp
+
+# Interactive rotation on a single cloud
 ./scripts/rotate_secrets.sh --connection aws_spcs
 
 # Preview what would happen without making changes
 ./scripts/rotate_secrets.sh --connection aws_spcs --dry-run
 ```
 
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--connection NAME` | Target a single Snow CLI connection |
+| `--all-clouds` | Auto-detect all `*_spcs` connections from `.env` and rotate across all |
+| `--check` | Read-only: report all 9 secrets, test SMTP login, check PAT expiry |
+| `--smtp` | Non-interactive: rotate `GRAFANA_SMTP_PASSWORD` only (test → update all clouds → update `.env` → update Keychain → restart PF_MONITOR) |
+| `--dry-run` | Show what would be executed without making changes |
+
+### Interactive Menu (7 options)
+
+When run without `--check` or `--smtp`, the script presents an interactive menu:
+
+| # | Secret | Services Restarted |
+|---|--------|--------------------|
+| 1 | `PREFECT_DB_PASSWORD` | PF_SERVER¹, PF_SERVICES, PF_WORKER |
+| 2 | `GIT_ACCESS_TOKEN` | PF_WORKER |
+| 3 | `POSTGRES_EXPORTER_DSN` | PF_MONITOR |
+| 4 | `GRAFANA_DB_DSN` | PF_MONITOR |
+| 5 | `GRAFANA_SMTP_PASSWORD` | PF_MONITOR |
+| 6 | `GRAFANA_ADMIN_PASSWORD` | PF_MONITOR |
+| 7 | `SLACK_WEBHOOK_URL` | PF_MONITOR |
+
+¹ PF_SERVER is restarted via `SUSPEND`/`RESUME` (not `CREATE OR REPLACE`) to preserve the endpoint URL.
+
+### All 9 Secrets
+
+| Secret | Used By | Rotation Trigger |
+|--------|---------|------------------|
+| `PREFECT_DB_PASSWORD` | PF_SERVER, PF_SERVICES, PF_WORKER | Password policy |
+| `GIT_ACCESS_TOKEN` | PF_WORKER, GCP/AWS workers | Token expiry or revocation |
+| `POSTGRES_EXPORTER_DSN` | PF_MONITOR (postgres-exporter) | Password rotation |
+| `GRAFANA_DB_DSN` | PF_MONITOR (grafana) | Password rotation |
+| `GRAFANA_ADMIN_PASSWORD` | PF_MONITOR (grafana) | Policy or compromise |
+| `GRAFANA_SMTP_PASSWORD` | PF_MONITOR (grafana email) | **Google password change** (revokes all app passwords) |
+| `GRAFANA_SMTP_USER` | PF_MONITOR (grafana email) | Sender address change |
+| `PREFECT_SVC_PAT` | PF_MONITOR (auth-proxy sidecar) | PAT expiry |
+| `SLACK_WEBHOOK_URL` | PF_MONITOR (grafana Slack alerts) | Webhook regeneration |
+| `SNOWFLAKE_PAT` | GCP/AWS auth-proxy (`.env`) | Before JWT expiry (check with `--check`) |
+
 The script:
 - Reads new values from **stdin** (not CLI args) to avoid shell history leakage
-- Updates both the Snowflake secret object and `.env` in one operation
+- Updates the Snowflake secret object, `.env`, and macOS Keychain in one operation
 - Restarts affected SPCS services via `SUSPEND` / `RESUME` to pick up new values
-- Does **not** restart `PF_SERVER` to preserve the public endpoint URL
+- Does **not** use `CREATE OR REPLACE SERVICE` — preserves public endpoint URLs
 - Decodes the JWT `exp` claim from `SNOWFLAKE_PAT` and warns if expiring within 30 days
+- `--smtp` also validates the new password via SMTP login before applying changes
 
-| Secret | Used by | Rotation frequency |
-|--------|---------|--------------------|
-| `PREFECT_DB_PASSWORD` | PF_SERVER, PF_SERVICES, PF_WORKER | When password policy requires |
-| `GIT_ACCESS_TOKEN` | PF_WORKER, GCP worker | When token expires or is revoked |
-| `SNOWFLAKE_PAT` | GCP auth-proxy (`.env`) | Before JWT expiry (check with `--check`) |
+> **IMPORTANT: Google Password Changes Revoke ALL App Passwords.**
+> If you change your Google account password, every Gmail App Password is instantly revoked.
+> Grafana email alerts will fail with `535 BadCredentials` until you regenerate at
+> https://myaccount.google.com/apppasswords and run:
+> ```bash
+> ./scripts/rotate_secrets.sh --all-clouds --smtp
+> ```
+
+### Secret Setup (First Deploy)
+
+Secrets are created by `sql/03_setup_secrets.sql` (gitignored — contains real values).
+Copy from `sql/03_setup_secrets.sql.template` and fill in values:
+
+```bash
+cp sql/03_setup_secrets.sql.template sql/03_setup_secrets.sql
+# Edit sql/03_setup_secrets.sql with real values
+snow sql -f sql/03_setup_secrets.sql --connection aws_spcs
+```
+
+The monitoring deploy script (`monitoring/deploy_monitoring.sh`) also validates SMTP
+credentials at deploy time and displays a prominent warning if login fails.
 
 ## Cost Management
 
@@ -1394,6 +1526,15 @@ ALTER USER PREFECT_SVC SET NETWORK_POLICY = PREFECT_SVC_POLICY;
 | `GIT_BRANCH` | prefect.yaml | Branch to clone (default: `main`) |
 | `GIT_ACCESS_TOKEN` | GCP worker (pull step) | Git access token for private repos (GitHub, GitLab, BitBucket, etc.) |
 | `SPCS_ENDPOINT` | GCP auth-proxy | SPCS public endpoint hostname (no `https://`) |
+| `SPCS_ENDPOINT_AWS` | deploy.py `--cloud aws` | Per-cloud SPCS endpoint for AWS |
+| `SPCS_ENDPOINT_AZURE` | deploy.py `--cloud azure` | Per-cloud SPCS endpoint for Azure |
+| `SPCS_ENDPOINT_GCP` | deploy.py `--cloud gcp` | Per-cloud SPCS endpoint for GCP |
+| `SNOWFLAKE_PAT_AWS` | deploy.py `--cloud aws` | Per-cloud PAT for AWS SPCS auth |
+| `SNOWFLAKE_PAT_AZURE` | deploy.py `--cloud azure` | Per-cloud PAT for Azure SPCS auth |
+| `SNOWFLAKE_PAT_GCP` | deploy.py `--cloud gcp` | Per-cloud PAT for GCP SPCS auth |
+| `GRAFANA_SMTP_USER` | deploy_monitoring.sh | Gmail sender address for alerts |
+| `GRAFANA_SMTP_PASSWORD` | deploy_monitoring.sh | Gmail App Password (no spaces) |
+| `GRAFANA_SMTP_RECIPIENTS` | deploy_monitoring.sh | Alert email recipients |
 | `SNOWFLAKE_ACCOUNT` | flows | Snowflake account identifier |
 | `SNOWFLAKE_USER` | flows | Snowflake username (service user for GCP) |
 | `SNOWFLAKE_WAREHOUSE` | SPCS worker, flows | Snowflake warehouse for query execution |
@@ -1968,10 +2109,14 @@ Grafana sends alert emails via Gmail SMTP using a Google App Password:
 1. **Credentials**: macOS Keychain service `gmail-smtp`, account `john.kang@snowflake.com`
 2. **Deploy script** reads from Keychain → creates Snowflake secret `GRAFANA_SMTP_PASSWORD`
 3. **SPCS spec** mounts the secret as `GF_SMTP_PASSWORD` env var
-4. **Port 465 + SSL**: Uses `GF_SMTP_STARTTLS_POLICY=NoStartTLS` (port 465 is implicit TLS, not STARTTLS)
+4. **Port 587 + STARTTLS**: Uses `GF_SMTP_HOST=smtp.gmail.com:587` with `GF_SMTP_STARTTLS_POLICY=MandatoryStartTLS`
+
+> **Google password change = all App Passwords revoked.**
+> Regenerate at https://myaccount.google.com/apppasswords then run:
+> `./scripts/rotate_secrets.sh --all-clouds --smtp`
 
 To change recipients, edit `GF_SMTP_ALERT_RECIPIENTS` in `monitoring/specs/pf_monitor.yaml`.
-The `MONITOR_EGRESS_RULE` network rule must include `smtp.gmail.com:443` for outbound access.
+The `MONITOR_EGRESS_RULE` network rule must include `smtp.gmail.com:587` for outbound access.
 
 ### SPCS OAuth Token Limitations
 
@@ -2078,17 +2223,68 @@ LOKI_URL=https://<loki-endpoint>/
 The script triggers flow runs, waits for completion, then validates Prometheus metrics,
 Loki log ingestion, Grafana health, and backup stage files.
 
+## Quick Operations Reference
+
+Common day-to-day commands in one place.
+
+```bash
+# --- Deploy flows ---
+set -a && source .env && set +a
+uv run python flows/deploy.py --cloud aws --name my-flow --pool aws   # single flow, single cloud
+uv run python flows/deploy.py --cloud all --all                       # all flows, all clouds
+uv run python flows/deploy.py --validate                              # offline validation only
+
+# --- Secrets ---
+./scripts/rotate_secrets.sh --all-clouds --check                      # health check (read-only)
+./scripts/rotate_secrets.sh --all-clouds --smtp                       # fix Gmail after password change
+./scripts/rotate_secrets.sh --connection aws_spcs                     # interactive rotation
+
+# --- Service management (safe — preserves endpoints) ---
+snow spcs service upgrade PREFECT_DB.PREFECT_SCHEMA.PF_MONITOR \
+  --spec-path monitoring/specs/pf_monitor.yaml \
+  --connection aws_spcs --role PREFECT_ROLE --database PREFECT_DB \
+  --schema PREFECT_SCHEMA --warehouse PREFECT_WH
+
+# --- Monitoring ---
+./monitoring/deploy_monitoring.sh --connection aws_spcs               # deploy/update monitoring
+./monitoring/teardown_monitoring.sh --connection aws_spcs              # tear down
+
+# --- Sync flows to SPCS stage ---
+./scripts/sync_flows.sh --connection aws_spcs
+
+# --- Tests ---
+uv run pytest                                                         # offline tests
+uv run pytest -m local                                                # local integration (needs docker)
+PREFECT_SPCS_API_URL=https://<endpoint>/api SNOWFLAKE_PAT=<pat> uv run pytest -m e2e  # E2E
+```
+
 ## Troubleshooting FAQ
 
 <details>
 <summary>SMTP alerts not sending</summary>
 
-SPCS blocks port 465 (implicit SSL). Use port 587 with STARTTLS:
+**Most common cause: Google password change revoked all App Passwords.**
+Changing your Google account password instantly revokes every App Password.
+Grafana will fail with `535 BadCredentials`.
+
+Fix (one command):
+```bash
+# 1. Generate a new App Password at https://myaccount.google.com/apppasswords
+# 2. Run the one-shot SMTP rotation:
+./scripts/rotate_secrets.sh --all-clouds --smtp
+# This tests the new password, updates all 3 clouds, updates .env + Keychain,
+# and restarts PF_MONITOR on each cloud.
 ```
-GF_SMTP_HOST: "smtp.gmail.com:587"
-GF_SMTP_STARTTLS_POLICY: "MandatoryStartTLS"
-```
-Ensure `smtp.gmail.com:587` is in `MONITOR_EGRESS_RULE` and the Gmail App Password is stored as `GRAFANA_SMTP_PASSWORD` secret.
+
+Other SMTP issues:
+- SPCS blocks port 465 (implicit SSL). Use port 587 with STARTTLS:
+  ```
+  GF_SMTP_HOST: "smtp.gmail.com:587"
+  GF_SMTP_STARTTLS_POLICY: "MandatoryStartTLS"
+  ```
+- Ensure `smtp.gmail.com:587` is in `MONITOR_EGRESS_RULE`
+- Verify secret exists: `SHOW SECRETS LIKE 'GRAFANA_SMTP_PASSWORD' IN SCHEMA PREFECT_DB.PREFECT_SCHEMA`
+- Check Grafana container logs: `SELECT SYSTEM$GET_SERVICE_LOGS('PF_MONITOR', 0, 'grafana', 50)`
 </details>
 
 <details>

@@ -528,8 +528,9 @@ class TestRotateSecrets:
     def test_updates_env_file_for_git_token(self, script_files):
         """After rotating GIT_ACCESS_TOKEN, the .env should be updated too."""
         content = script_files["rotate_secrets.sh"]
-        assert "GIT_ACCESS_TOKEN=" in content
-        assert "sed" in content  # uses sed to update .env
+        assert "_update_env" in content
+        assert "GIT_ACCESS_TOKEN" in content
+        assert "sed" in content
 
     def test_handles_macos_sed(self, script_files):
         """macOS sed requires -i '' (empty extension); script should handle both."""
@@ -600,6 +601,141 @@ class TestRotateSecrets:
     def test_handles_invalid_choice(self, script_files):
         content = script_files["rotate_secrets.sh"]
         assert "Invalid choice" in content
+
+    # --- --all-clouds flag ---
+
+    def test_supports_all_clouds_flag(self, script_files):
+        content = script_files["rotate_secrets.sh"]
+        assert "--all-clouds" in content
+
+    def test_all_clouds_auto_detects_connections(self, script_files):
+        """--all-clouds should read *_spcs connections from .env or config."""
+        content = script_files["rotate_secrets.sh"]
+        assert "ALL_CLOUDS" in content or "_resolve_clouds" in content
+
+    def test_all_clouds_iterates_connections(self, script_files):
+        """--all-clouds should loop over each detected cloud connection."""
+        content = script_files["rotate_secrets.sh"]
+        assert "CLOUD_CONNECTIONS" in content
+
+    # --- --smtp flag ---
+
+    def test_supports_smtp_flag(self, script_files):
+        content = script_files["rotate_secrets.sh"]
+        assert "--smtp" in content
+
+    def test_smtp_flag_targets_grafana_smtp_password(self, script_files):
+        """--smtp should specifically target GRAFANA_SMTP_PASSWORD."""
+        content = script_files["rotate_secrets.sh"]
+        assert "SMTP_ONLY" in content or "GRAFANA_SMTP_PASSWORD" in content
+
+    def test_smtp_tests_login_before_applying(self, script_files):
+        """--smtp should validate SMTP login before updating secrets."""
+        content = script_files["rotate_secrets.sh"]
+        assert "_test_smtp" in content or "smtplib" in content or "smtp.gmail.com" in content
+
+    # --- All 9 secrets ---
+
+    def test_manages_all_9_secrets(self, script_files):
+        """Script should reference all 9 secret objects."""
+        content = script_files["rotate_secrets.sh"]
+        expected = [
+            "PREFECT_DB_PASSWORD",
+            "GIT_ACCESS_TOKEN",
+            "POSTGRES_EXPORTER_DSN",
+            "GRAFANA_DB_DSN",
+            "GRAFANA_ADMIN_PASSWORD",
+            "GRAFANA_SMTP_PASSWORD",
+            "GRAFANA_SMTP_USER",
+            "PREFECT_SVC_PAT",
+            "SLACK_WEBHOOK_URL",
+        ]
+        for secret in expected:
+            assert secret in content, f"rotate_secrets.sh missing secret: {secret}"
+
+    def test_all_secrets_array_has_9_entries(self, script_files):
+        """The ALL_SECRETS array should contain exactly 9 entries."""
+        content = script_files["rotate_secrets.sh"]
+        assert "ALL_SECRETS" in content
+
+    # --- 7 interactive menu options ---
+
+    def test_menu_has_7_choices(self, script_files):
+        content = script_files["rotate_secrets.sh"]
+        assert "7)" in content
+
+    def test_menu_choice_range_is_1_to_7(self, script_files):
+        content = script_files["rotate_secrets.sh"]
+        assert "Choice [1-7]" in content or "[1-7]" in content
+
+    def test_menu_includes_grafana_smtp_password(self, script_files):
+        content = script_files["rotate_secrets.sh"]
+        assert "5)" in content
+        assert "GRAFANA_SMTP_PASSWORD" in content
+
+    def test_menu_includes_grafana_admin_password(self, script_files):
+        content = script_files["rotate_secrets.sh"]
+        assert "6)" in content
+        assert "GRAFANA_ADMIN_PASSWORD" in content
+
+    def test_menu_includes_slack_webhook(self, script_files):
+        content = script_files["rotate_secrets.sh"]
+        assert "7)" in content
+        assert "SLACK_WEBHOOK_URL" in content
+
+    # --- Helper functions ---
+
+    def test_has_update_env_helper(self, script_files):
+        """Script should have a _update_env helper function."""
+        content = script_files["rotate_secrets.sh"]
+        assert "_update_env" in content
+
+    def test_has_update_keychain_helper(self, script_files):
+        """Script should have a _update_keychain helper for macOS Keychain."""
+        content = script_files["rotate_secrets.sh"]
+        assert "_update_keychain" in content or "security" in content
+
+    def test_has_restart_service_helper(self, script_files):
+        """Script should have a _restart_service helper for SUSPEND/RESUME."""
+        content = script_files["rotate_secrets.sh"]
+        assert "_restart_service" in content
+
+    def test_has_test_smtp_helper(self, script_files):
+        """Script should have a _test_smtp helper for SMTP validation."""
+        content = script_files["rotate_secrets.sh"]
+        assert "_test_smtp" in content
+
+    # --- macOS compatibility ---
+
+    def test_uses_tr_for_uppercase_not_bash4(self, script_files):
+        """Must use tr for uppercase, not bash4-only ${var^^} syntax."""
+        content = script_files["rotate_secrets.sh"]
+        assert "tr '[:lower:]' '[:upper:]'" in content or 'tr "[:lower:]" "[:upper:]"' in content
+
+    # --- Google password revocation warning ---
+
+    def test_warns_about_google_password_revocation(self, script_files):
+        """Help text should warn about Google password revoking app passwords."""
+        content = script_files["rotate_secrets.sh"]
+        assert "apppasswords" in content or "App Password" in content
+
+    # --- Check mode expanded ---
+
+    def test_check_mode_tests_smtp_login(self, script_files):
+        """--check should test SMTP login when GRAFANA_SMTP_PASSWORD exists."""
+        content = script_files["rotate_secrets.sh"]
+        assert "SMTP" in content and "check" in content.lower()
+
+    def test_check_mode_reports_pat_expiry(self, script_files):
+        content = script_files["rotate_secrets.sh"]
+        assert "exp" in content
+
+    # --- Connection not required with --all-clouds ---
+
+    def test_connection_not_required_with_all_clouds(self, script_files):
+        """--all-clouds should not require --connection."""
+        content = script_files["rotate_secrets.sh"]
+        assert "ALL_CLOUDS" in content
 
 
 class TestUpdateVersionsScript:

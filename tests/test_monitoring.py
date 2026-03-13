@@ -9492,3 +9492,122 @@ class TestPollerLokiRuleLabelConsistency:
             if "key =" in poller_source
             else True
         ), "Poller stream key must include severity for per-severity Loki streams"
+
+
+# ===========================================================================
+# SMTP Validation in deploy_monitoring.sh
+# ===========================================================================
+class TestDeployMonitoringSmtpValidation:
+    """Verify deploy_monitoring.sh validates SMTP credentials at deploy time."""
+
+    @pytest.fixture(scope="class")
+    def deploy_script(self):
+        return (PROJECT_DIR / "monitoring" / "deploy_monitoring.sh").read_text()
+
+    def test_validates_smtp_login_with_smtplib(self, deploy_script):
+        assert "smtplib" in deploy_script
+
+    def test_uses_starttls_for_validation(self, deploy_script):
+        assert "starttls" in deploy_script
+
+    def test_smtp_validation_uses_port_587(self, deploy_script):
+        assert "587" in deploy_script
+
+    def test_strips_spaces_from_password(self, deploy_script):
+        assert "// /" in deploy_script or "SMTP_PASSWORD// /" in deploy_script
+
+    def test_shows_warning_box_on_failure(self, deploy_script):
+        assert "WARNING" in deploy_script and "SMTP" in deploy_script
+
+    def test_references_apppasswords_url_on_failure(self, deploy_script):
+        assert "myaccount.google.com/apppasswords" in deploy_script
+
+    def test_references_rotate_secrets_on_failure(self, deploy_script):
+        assert "rotate_secrets.sh" in deploy_script
+
+    def test_shows_success_message_on_valid_login(self, deploy_script):
+        assert "SMTP login validated successfully" in deploy_script
+
+
+# ===========================================================================
+# sql/03_setup_secrets.sql.template completeness
+# ===========================================================================
+class TestSecretsTemplate:
+    """Verify sql/03_setup_secrets.sql.template documents all 9 secrets."""
+
+    @pytest.fixture(scope="class")
+    def template(self):
+        return (PROJECT_DIR / "sql" / "03_setup_secrets.sql.template").read_text()
+
+    ALL_SECRETS = [
+        "PREFECT_DB_PASSWORD",
+        "GIT_ACCESS_TOKEN",
+        "POSTGRES_EXPORTER_DSN",
+        "GRAFANA_DB_DSN",
+        "GRAFANA_ADMIN_PASSWORD",
+        "GRAFANA_SMTP_USER",
+        "GRAFANA_SMTP_PASSWORD",
+        "SLACK_WEBHOOK_URL",
+        "PREFECT_SVC_PAT",
+    ]
+
+    @pytest.mark.parametrize("secret", ALL_SECRETS)
+    def test_template_has_create_secret(self, template, secret):
+        assert f"CREATE SECRET IF NOT EXISTS {secret}" in template
+
+    def test_template_has_9_create_secret_statements(self, template):
+        count = template.count("CREATE SECRET IF NOT EXISTS")
+        assert count >= 9, f"Expected >=9 CREATE SECRET statements, got {count}"
+
+    def test_template_warns_about_google_password_revocation(self, template):
+        assert "REVOKES" in template or "revoke" in template.lower()
+
+    def test_template_references_apppasswords_url(self, template):
+        assert "myaccount.google.com/apppasswords" in template
+
+    def test_template_references_rotate_secrets_smtp(self, template):
+        assert "rotate_secrets.sh --all-clouds --smtp" in template
+
+    def test_template_uses_placeholders_not_real_values(self, template):
+        assert "<REPLACE_" in template or "CHANGE_ME" in template
+
+    def test_template_lists_all_9_in_header(self, template):
+        header = template[:1000]
+        for i in range(1, 10):
+            assert f"{i}." in header, f"Header missing numbered secret #{i}"
+
+
+# ===========================================================================
+# .env.example — SMTP config and revocation warning
+# ===========================================================================
+class TestEnvExampleSmtpConfig:
+    """Verify .env.example documents SMTP vars and Google revocation warning."""
+
+    @pytest.fixture(scope="class")
+    def env_example(self):
+        return (PROJECT_DIR / ".env.example").read_text()
+
+    def test_has_grafana_smtp_user(self, env_example):
+        assert "GRAFANA_SMTP_USER" in env_example
+
+    def test_has_grafana_smtp_password(self, env_example):
+        assert "GRAFANA_SMTP_PASSWORD" in env_example
+
+    def test_has_grafana_smtp_recipients(self, env_example):
+        assert "GRAFANA_SMTP_RECIPIENTS" in env_example
+
+    def test_warns_about_google_password_revocation(self, env_example):
+        env_lower = env_example.lower()
+        assert "revoke" in env_lower or "REVOKES" in env_example
+
+    def test_references_apppasswords_url(self, env_example):
+        assert "myaccount.google.com/apppasswords" in env_example
+
+    def test_references_rotate_secrets_smtp(self, env_example):
+        assert "rotate_secrets.sh --all-clouds --smtp" in env_example
+
+    def test_smtp_password_is_placeholder(self, env_example):
+        for line in env_example.splitlines():
+            if line.startswith("GRAFANA_SMTP_PASSWORD="):
+                value = line.split("=", 1)[1]
+                assert "xxxx" in value or "CHANGE" in value or "your" in value.lower()

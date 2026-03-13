@@ -128,3 +128,142 @@ class TestCrossCloudDocumentation:
             "README should document using short DNS names (e.g., pf-server) "
             "instead of FQDNs for cross-account portability"
         )
+
+
+class TestReadmeDeployPyDocumentation:
+    """Verify README documents deploy.py --cloud flag and usage."""
+
+    @pytest.fixture(scope="class")
+    def readme(self):
+        return (PROJECT_DIR / "README.md").read_text()
+
+    def test_readme_documents_deploy_py_cloud_flag(self, readme):
+        assert "--cloud aws" in readme
+
+    def test_readme_documents_deploy_py_cloud_all(self, readme):
+        assert "--cloud all" in readme
+
+    def test_readme_documents_spcs_endpoint_per_cloud(self, readme):
+        assert "SPCS_ENDPOINT_AWS" in readme
+        assert "SPCS_ENDPOINT_AZURE" in readme
+        assert "SPCS_ENDPOINT_GCP" in readme
+
+    def test_readme_documents_snowflake_pat_per_cloud(self, readme):
+        assert "SNOWFLAKE_PAT_AWS" in readme
+        assert "SNOWFLAKE_PAT_AZURE" in readme
+        assert "SNOWFLAKE_PAT_GCP" in readme
+
+    def test_readme_shows_deploy_py_usage_examples(self, readme):
+        assert "uv run python flows/deploy.py" in readme
+
+    def test_readme_documents_deploy_py_validate_flag(self, readme):
+        assert "--validate" in readme
+
+    def test_readme_documents_deploy_py_diff_flag(self, readme):
+        assert "--diff" in readme
+
+    def test_readme_documents_source_env_before_deploy(self, readme):
+        """Deploy instructions should remind to source .env first."""
+        assert "source .env" in readme
+
+
+class TestReadmeSecretsRotationDocumentation:
+    """Verify README documents rotate_secrets.sh --all-clouds and --smtp."""
+
+    @pytest.fixture(scope="class")
+    def readme(self):
+        return (PROJECT_DIR / "README.md").read_text()
+
+    def test_readme_documents_all_clouds_flag(self, readme):
+        assert "--all-clouds" in readme
+
+    def test_readme_documents_smtp_flag(self, readme):
+        assert "--smtp" in readme
+
+    def test_readme_documents_all_9_secrets(self, readme):
+        expected = [
+            "PREFECT_DB_PASSWORD",
+            "GIT_ACCESS_TOKEN",
+            "POSTGRES_EXPORTER_DSN",
+            "GRAFANA_DB_DSN",
+            "GRAFANA_ADMIN_PASSWORD",
+            "GRAFANA_SMTP_PASSWORD",
+            "GRAFANA_SMTP_USER",
+            "PREFECT_SVC_PAT",
+            "SLACK_WEBHOOK_URL",
+        ]
+        for secret in expected:
+            assert secret in readme, f"README missing secret: {secret}"
+
+    def test_readme_documents_7_menu_options(self, readme):
+        assert "7" in readme and "menu" in readme.lower() or "interactive" in readme.lower()
+
+    def test_readme_documents_one_shot_smtp_fix(self, readme):
+        assert "rotate_secrets.sh --all-clouds --smtp" in readme
+
+    def test_readme_documents_check_flag(self, readme):
+        assert "--check" in readme
+
+
+class TestReadmeSmtpTroubleshooting:
+    """Verify README documents SMTP troubleshooting and Google password revocation."""
+
+    @pytest.fixture(scope="class")
+    def readme(self):
+        return (PROJECT_DIR / "README.md").read_text()
+
+    def test_readme_warns_about_google_password_revocation(self, readme):
+        readme_lower = readme.lower()
+        assert "google" in readme_lower and "revoke" in readme_lower
+
+    def test_readme_mentions_apppasswords_url(self, readme):
+        assert "myaccount.google.com/apppasswords" in readme
+
+    def test_readme_mentions_535_bad_credentials(self, readme):
+        assert "535" in readme or "BadCredentials" in readme
+
+    def test_readme_smtp_uses_port_587(self, readme):
+        assert "smtp.gmail.com:587" in readme
+
+    def test_readme_mentions_mandatory_starttls(self, readme):
+        assert "MandatoryStartTLS" in readme
+
+
+class TestReadmeQuickOperationsReference:
+    """Verify README has a Quick Operations Reference section."""
+
+    @pytest.fixture(scope="class")
+    def readme(self):
+        return (PROJECT_DIR / "README.md").read_text()
+
+    def test_has_quick_operations_section(self, readme):
+        assert "Quick Operations Reference" in readme
+
+    def test_quick_ref_includes_deploy_command(self, readme):
+        assert "uv run python flows/deploy.py --cloud" in readme
+
+    def test_quick_ref_includes_secrets_check(self, readme):
+        assert "rotate_secrets.sh --all-clouds --check" in readme
+
+    def test_quick_ref_includes_smtp_fix(self, readme):
+        assert "rotate_secrets.sh --all-clouds --smtp" in readme
+
+    def test_quick_ref_includes_pytest(self, readme):
+        assert "uv run pytest" in readme
+
+
+class TestReadmeGrafanaSmtpConfig:
+    """Verify README documents GRAFANA_SMTP_* env vars."""
+
+    @pytest.fixture(scope="class")
+    def readme(self):
+        return (PROJECT_DIR / "README.md").read_text()
+
+    def test_readme_documents_grafana_smtp_user_env_var(self, readme):
+        assert "GRAFANA_SMTP_USER" in readme
+
+    def test_readme_documents_grafana_smtp_password_env_var(self, readme):
+        assert "GRAFANA_SMTP_PASSWORD" in readme
+
+    def test_readme_documents_grafana_smtp_recipients_env_var(self, readme):
+        assert "GRAFANA_SMTP_RECIPIENTS" in readme

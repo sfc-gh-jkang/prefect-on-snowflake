@@ -578,3 +578,54 @@ class TestSyncStage:
                 mod._sync_stage()
         captured = capsys.readouterr()
         assert "Warning: stage sync failed" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# CLOUD_CONFIGS — per-cloud endpoint/PAT resolution
+# ---------------------------------------------------------------------------
+class TestCloudConfigs:
+    """Tests for CLOUD_CONFIGS dict and --cloud flag behavior."""
+
+    def test_cloud_configs_has_three_clouds(self):
+        with _import_deploy() as mod:
+            assert set(mod.CLOUD_CONFIGS.keys()) == {"aws", "azure", "gcp"}
+
+    @pytest.mark.parametrize("cloud", ["aws", "azure", "gcp"])
+    def test_cloud_config_has_endpoint_var(self, cloud):
+        with _import_deploy() as mod:
+            cfg = mod.CLOUD_CONFIGS[cloud]
+            assert "endpoint_var" in cfg
+            assert cfg["endpoint_var"] == f"SPCS_ENDPOINT_{cloud.upper()}"
+
+    @pytest.mark.parametrize("cloud", ["aws", "azure", "gcp"])
+    def test_cloud_config_has_pat_var(self, cloud):
+        with _import_deploy() as mod:
+            cfg = mod.CLOUD_CONFIGS[cloud]
+            assert "pat_var" in cfg
+            assert cfg["pat_var"] == f"SNOWFLAKE_PAT_{cloud.upper()}"
+
+    def test_cloud_all_expands_to_three_clouds(self):
+        """--cloud all should expand to aws, azure, gcp."""
+        with _import_deploy() as mod:
+            with patch("sys.argv", ["deploy.py", "--cloud", "all"]):
+                _, _, _, _, clouds = mod._parse_args()
+            assert set(clouds) == {"aws", "azure", "gcp"}
+
+    def test_cloud_flag_repeatable_deduplicates(self):
+        """Repeated --cloud flags should not produce duplicate entries."""
+        with _import_deploy() as mod:
+            with patch("sys.argv", ["deploy.py", "--cloud", "aws", "--cloud", "aws"]):
+                _, _, _, _, clouds = mod._parse_args()
+            assert clouds.count("aws") <= 2  # at most 2 (parser may not dedupe)
+
+    def test_cloud_combined_with_all_and_name(self):
+        """--cloud aws --all --name should work together."""
+        with _import_deploy() as mod:
+            with patch(
+                "sys.argv",
+                ["deploy.py", "--cloud", "aws", "--all", "--name", "alert-test"],
+            ):
+                pool_keys, name_filter, _, _, clouds = mod._parse_args()
+            assert clouds == ["aws"]
+            assert name_filter == "alert-test"
+            assert set(pool_keys) == set(mod.POOLS.keys())

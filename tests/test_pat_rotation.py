@@ -853,5 +853,5 @@ class TestRotateSecretsShIntegration:
         """New PAT must be passed via env var, not CLI arg (security)."""
         assert "NEW_SNOWFLAKE_PAT" in script_content
 
-    def test_menu_shows_4_options(self, script_content):
-        assert "Choice [1/2/3/4]" in script_content
+    def test_menu_shows_7_options(self, script_content):
+        assert "Choice [1-7]" in script_content

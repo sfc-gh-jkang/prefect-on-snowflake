@@ -222,6 +222,34 @@ if [[ -z "$SMTP_PASSWORD" ]]; then
     echo "  WARNING: SMTP password not set — Grafana email alerts will not work."
 else
     _create_secret GRAFANA_SMTP_PASSWORD "$SMTP_PASSWORD" "Gmail App Password for Grafana SMTP alerting"
+
+    echo "  Validating SMTP login..."
+    if python3 -c "
+import smtplib, sys
+try:
+    s = smtplib.SMTP('smtp.gmail.com', 587, timeout=10)
+    s.starttls()
+    s.login('${SMTP_USER}', '${SMTP_PASSWORD// /}')
+    s.quit()
+except Exception as e:
+    print(f'  SMTP validation FAILED: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>&1; then
+        echo "  SMTP login validated successfully."
+    else
+        echo ""
+        echo "  ╔══════════════════════════════════════════════════════════════════╗"
+        echo "  ║  WARNING: SMTP login failed — email alerts will NOT work.       ║"
+        echo "  ║                                                                  ║"
+        echo "  ║  Common cause: Google password was changed, which revokes ALL    ║"
+        echo "  ║  app passwords. Generate a new one at:                           ║"
+        echo "  ║    https://myaccount.google.com/apppasswords                     ║"
+        echo "  ║                                                                  ║"
+        echo "  ║  Then run:                                                       ║"
+        echo "  ║    ./scripts/rotate_secrets.sh --all-clouds --smtp               ║"
+        echo "  ╚══════════════════════════════════════════════════════════════════╝"
+        echo ""
+    fi
 fi
 
 # --- Slack webhook URL secret ---------------------------------------------------
