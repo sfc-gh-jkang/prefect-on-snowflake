@@ -209,9 +209,7 @@ class TestMonitorSpecSlackSecret:
         config = yaml.safe_load(cp_path.read_text())
         receivers = config.get("contactPoints", [{}])[0].get("receivers", [])
         slack_receivers = [r for r in receivers if r.get("type") == "slack"]
-        assert len(slack_receivers) == 0, (
-            "Slack receiver must be commented out by default"
-        )
+        assert len(slack_receivers) == 0, "Slack receiver must be commented out by default"
 
     def test_contact_points_has_slack_instructions(self):
         """contactpoints.yaml must contain instructions for enabling Slack."""
