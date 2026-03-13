@@ -415,7 +415,7 @@ deployments:
     description: "Infrastructure health check: Snowflake, SPCS services, compute pools"
 
   # ===========================================================================
-  # alert-test — Optionally fails to validate alert pipeline end-to-end
+  # alert-test — Fails by default to validate alert pipeline end-to-end
   # ===========================================================================
   - name: alert-test-local
     entrypoint: alert_test_flow.py:alert_test_flow
@@ -423,9 +423,9 @@ deployments:
       name: spcs-pool
     tags: [spcs, test, alerting]
     parameters:
-      should_fail: false
+      should_fail: true
     enforce_parameter_schema: true
-    description: "Optionally fails to validate alert pipeline end-to-end (pass should_fail=true to trigger)"
+    description: "Fails by default to validate alert pipeline end-to-end (pass should_fail=false to skip)"
 
   - name: alert-test-gcp
     entrypoint: alert_test_flow.py:alert_test_flow
@@ -433,9 +433,9 @@ deployments:
       name: gcp-pool
     tags: [gcp, test, alerting]
     parameters:
-      should_fail: false
+      should_fail: true
     enforce_parameter_schema: true
-    description: "Optionally fails to validate alert pipeline end-to-end (pass should_fail=true to trigger)"
+    description: "Fails by default to validate alert pipeline end-to-end (pass should_fail=false to skip)"
 
   - name: alert-test-aws
     entrypoint: alert_test_flow.py:alert_test_flow
@@ -443,9 +443,9 @@ deployments:
       name: aws-pool
     tags: [aws, test, alerting]
     parameters:
-      should_fail: false
+      should_fail: true
     enforce_parameter_schema: true
-    description: "Optionally fails to validate alert pipeline end-to-end (pass should_fail=true to trigger)"
+    description: "Fails by default to validate alert pipeline end-to-end (pass should_fail=false to skip)"
 
   - name: alert-test-azure
     entrypoint: alert_test_flow.py:alert_test_flow
@@ -453,9 +453,9 @@ deployments:
       name: azure-pool
     tags: [azure, test, alerting]
     parameters:
-      should_fail: false
+      should_fail: true
     enforce_parameter_schema: true
-    description: "Optionally fails to validate alert pipeline end-to-end (pass should_fail=true to trigger)"
+    description: "Fails by default to validate alert pipeline end-to-end (pass should_fail=false to skip)"
 
   # ===========================================================================
   # aws-pool-backup deployments — Backup AWS worker
@@ -554,9 +554,9 @@ deployments:
       name: aws-pool-backup
     tags: [aws-backup, test, alerting]
     parameters:
-      should_fail: false
+      should_fail: true
     enforce_parameter_schema: true
-    description: "Optionally fails to validate alert pipeline end-to-end (pass should_fail=true to trigger)"
+    description: "Fails by default to validate alert pipeline end-to-end (pass should_fail=false to skip)"
 
   # ===========================================================================
   # azure-pool-backup deployments — Backup Azure worker
@@ -655,9 +655,9 @@ deployments:
       name: azure-pool-backup
     tags: [azure-backup, test, alerting]
     parameters:
-      should_fail: false
+      should_fail: true
     enforce_parameter_schema: true
-    description: "Optionally fails to validate alert pipeline end-to-end (pass should_fail=true to trigger)"
+    description: "Fails by default to validate alert pipeline end-to-end (pass should_fail=false to skip)"
 
   # ===========================================================================
   # gcp-pool-backup deployments — Backup GCP worker
@@ -756,6 +756,6 @@ deployments:
       name: gcp-pool-backup
     tags: [gcp-backup, test, alerting]
     parameters:
-      should_fail: false
+      should_fail: true
     enforce_parameter_schema: true
-    description: "Optionally fails to validate alert pipeline end-to-end (pass should_fail=true to trigger)"
+    description: "Fails by default to validate alert pipeline end-to-end (pass should_fail=false to skip)"

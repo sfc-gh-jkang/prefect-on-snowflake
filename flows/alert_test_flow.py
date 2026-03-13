@@ -1,14 +1,14 @@
-"""Alert validation flow — optionally fails to trigger monitoring alerts.
+"""Alert validation flow — fails by default to trigger monitoring alerts.
 
 Used to verify end-to-end alert delivery:
   Prefect failure → prefect-exporter metrics → Prometheus → Grafana alert → Gmail
 
 Usage:
-  # Run locally (succeeds by default):
-  python flows/alert_test_flow.py
+  # Run from deployment (fails, triggers alerts):
+  prefect deployment run "alert-test/alert-test-aws"
 
-  # Force failure to test alert pipeline:
-  prefect deployment run "alert-test/alert-test-local" --param should_fail=true
+  # Run without failure (verify green path):
+  prefect deployment run "alert-test/alert-test-aws" --param should_fail=false
 """
 
 from __future__ import annotations
@@ -37,13 +37,13 @@ def explode() -> None:
     log_prints=True,
     on_failure=[on_flow_failure],
 )
-def alert_test_flow(should_fail: bool = False) -> str:
-    """Flow that optionally fails for alert validation.
+def alert_test_flow(should_fail: bool = True) -> str:
+    """Flow that fails by default for alert validation.
 
     Args:
-        should_fail: If True, the flow raises an error after doing some
-                     work to test the alert pipeline. Defaults to False
-                     (completes green).
+        should_fail: If True (default), the flow raises an error after doing
+                     some work to test the alert pipeline. Set to False to
+                     verify the flow runs green.
     """
     results = []
     for i in range(3):

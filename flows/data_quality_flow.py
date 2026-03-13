@@ -7,6 +7,8 @@ Reports issues via flow hooks.
 
 from __future__ import annotations
 
+import time
+
 from e2e_test_flow import cleanup as e2e_cleanup
 from e2e_test_flow import e2e_pipeline_test
 from hooks import on_flow_failure
@@ -36,24 +38,21 @@ TABLE_CHECKS: list[dict] = [
 # ---------------------------------------------------------------------------
 
 
-@task(retries=2, retry_delay_seconds=30)
+@task(retries=3, retry_delay_seconds=30)
 def check_table_exists(tbl: str) -> bool:
-    """Verify the table exists in the target schema."""
+    """Verify the table exists via direct query (not INFORMATION_SCHEMA)."""
     logger = get_run_logger()
     fqn = table_name(tbl)
-    query = f"""
-        SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES
-        WHERE TABLE_CATALOG  = CURRENT_DATABASE()
-          AND TABLE_SCHEMA   = CURRENT_SCHEMA()
-          AND TABLE_NAME     = '{tbl}'
-    """
-    _, rows = execute_query(query)
-    exists = rows[0][0] > 0
-    logger.info("Table %s exists: %s", fqn, exists)
-    return exists
+    try:
+        execute_query(f"SELECT 1 FROM {fqn} LIMIT 0")
+        logger.info("Table %s exists: True", fqn)
+        return True
+    except Exception:
+        logger.info("Table %s exists: False", fqn)
+        return False
 
 
-@task(retries=2, retry_delay_seconds=30)
+@task(retries=3, retry_delay_seconds=30)
 def check_row_count(tbl: str, min_rows: int) -> dict:
     """Check that a table has at least min_rows rows."""
     logger = get_run_logger()
@@ -67,7 +66,7 @@ def check_row_count(tbl: str, min_rows: int) -> dict:
     return {"table": tbl, "count": count, "min_rows": min_rows, "passed": passed}
 
 
-@task(retries=2, retry_delay_seconds=30)
+@task(retries=3, retry_delay_seconds=30)
 def check_freshness(tbl: str, max_hours: int) -> dict:
     """Check that a table was modified within the last max_hours hours.
 
@@ -126,31 +125,33 @@ def data_quality_check():
 
     logger.info("Running e2e-pipeline-test as prerequisite subflow ...")
     e2e_pipeline_test(skip_cleanup=True)
-    logger.info("e2e-pipeline-test completed — tables are fresh.")
+    logger.info("e2e-pipeline-test completed — waiting for table visibility ...")
+    time.sleep(5)
 
     results: list[dict] = []
     failures: list[str] = []
 
-    for check in TABLE_CHECKS:
-        tbl = check["table"]
+    try:
+        for check in TABLE_CHECKS:
+            tbl = check["table"]
 
-        # Existence
-        if not check_table_exists(tbl):
-            failures.append(f"{tbl}: table does not exist")
-            continue
+            if not check_table_exists(tbl):
+                failures.append(f"{tbl}: table does not exist")
+                continue
 
-        # Row count
-        rc = check_row_count(tbl, check["min_rows"])
-        results.append(rc)
-        if not rc["passed"]:
-            failures.append(f"{tbl}: row count {rc['count']} < {rc['min_rows']}")
+            rc = check_row_count(tbl, check["min_rows"])
+            results.append(rc)
+            if not rc["passed"]:
+                failures.append(f"{tbl}: row count {rc['count']} < {rc['min_rows']}")
 
-        # Freshness
-        if "freshness_hours" in check:
-            fr = check_freshness(tbl, check["freshness_hours"])
-            results.append(fr)
-            if not fr["passed"]:
-                failures.append(f"{tbl}: {fr['hours_since_update']}h old > {fr['max_hours']}h")
+            if "freshness_hours" in check:
+                fr = check_freshness(tbl, check["freshness_hours"])
+                results.append(fr)
+                if not fr["passed"]:
+                    failures.append(f"{tbl}: {fr['hours_since_update']}h old > {fr['max_hours']}h")
+    finally:
+        e2e_cleanup()
+        logger.info("E2E tables cleaned up.")
 
     logger.info("=" * 60)
     logger.info("DATA QUALITY CHECK — RESULTS")
@@ -160,9 +161,6 @@ def data_quality_check():
     for f in failures:
         logger.warning("  FAIL: %s", f)
     logger.info("=" * 60)
-
-    e2e_cleanup()
-    logger.info("E2E tables cleaned up.")
 
     if failures:
         raise RuntimeError(
