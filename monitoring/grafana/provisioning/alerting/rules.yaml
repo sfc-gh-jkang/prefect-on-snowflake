@@ -39,8 +39,8 @@ groups:
                     type: lt
                     params: [0.001]
               refId: C
-        noDataState: Alerting
-        execErrState: Alerting
+        noDataState: OK
+        execErrState: OK
         for: 2m
         labels:
           severity: warning
@@ -203,8 +203,8 @@ groups:
                     type: lt
                     params: [1]
               refId: C
-        noDataState: Alerting
-        execErrState: Alerting
+        noDataState: OK
+        execErrState: OK
         for: 5m
         labels:
           severity: critical

@@ -35,15 +35,17 @@ groups:
 
   - name: prefect_server
     rules:
-      # Prefect server down
+      # Prefect server down — only fires when Prometheus can reach the target
+      # but the scrape fails (up==0). Does NOT fire when the target is absent
+      # entirely (e.g. entire stack is stopped), preventing alert storms.
       - alert: PrefectServerDown
         expr: up{job="prefect-server"} == 0
-        for: 2m
+        for: 5m
         labels:
           severity: critical
         annotations:
           summary: "Prefect server is down"
-          description: "No successful scrape of Prefect server for 2+ minutes."
+          description: "No successful scrape of Prefect server for 5+ minutes."
 
       # High flow failure rate (new failures only, auto-resolves)
       - alert: HighFlowFailureRate
@@ -63,8 +65,12 @@ groups:
       # push via remote_write (no scrape target). Instead we check the
       # work-pool-level metric from the prefect-exporter sidecar.
       # Grafana also has a parallel worker-offline alert for email notifications.
+      # Guard: only fires when the metric actually exists (exporter is running),
+      # preventing alert storms when the entire stack is down.
       - alert: WorkerOffline
-        expr: sum(prefect_work_pool_workers{status="ONLINE"}) == 0
+        expr: |
+          sum(prefect_work_pool_workers{status="ONLINE"}) == 0
+          and on() (absent(prefect_work_pool_workers{status="ONLINE"}) == 0)
         for: 5m
         labels:
           severity: critical

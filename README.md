@@ -1098,13 +1098,13 @@ running as a single 6-container SPCS service (`PF_MONITOR`) on `PREFECT_MONITOR_
 
 | Rule | Group | Condition |
 |------|-------|-----------|
-| Service Down | service-health | Any `up == 0` target for >2 minutes |
-| High Error Rate | service-health | Error rate >5% for >5 minutes |
-| Container Restart | service-health | Container restart count increases |
-| Work Pool Saturated | prefect-app | All workers busy for >10 minutes |
-| Flow Run Failures | prefect-app | Failed flow run rate spikes |
-| High Memory Usage | resources | Memory usage >85% for >5 minutes |
-| Disk Space Low | resources | Available disk <15% for >10 minutes |
+| PrefectServerDown | prefect_server | `up{job="prefect-server"} == 0` for >5 minutes |
+| HighFlowFailureRate | prefect_server | New FAILED/CRASHED flow runs in 5 minutes |
+| HighContainerRestarts | spcs_health | >3 container restarts in 5 minutes |
+| HighCPUUsage | spcs_health | CPU >80% for >10 minutes |
+| HighMemoryUsage | spcs_health | Memory >90% for >5 minutes |
+| WorkerOffline | vm_workers | All workers offline for >5 minutes (guarded against absent metrics) |
+| DiskSpaceRunningLow | vm_workers | Available disk <15% for >5 minutes |
 
 **Loki Alert Rules (4)** — LogQL-based alerts evaluated by Loki's ruler (`loki/rules/fake/alerts.yaml`):
 
@@ -1115,17 +1115,20 @@ running as a single 6-container SPCS service (`PF_MONITOR`) on `PREFECT_MONITOR_
 | SPCSCrashLoop | critical | CrashLoopBackOff pattern in 10 minutes (fires immediately) |
 | SPCSAuthFailure | warning | >2 auth failure/token expiry log lines in 5 minutes (sustained 1m) |
 
-**Grafana Managed Alert Rules (3)** — provisioned via `grafana/provisioning/alerting/`:
+**Grafana Managed Alert Rules (5)** — provisioned via `grafana/provisioning/alerting/`:
 
 | Rule | Condition |
 |------|-----------|
-| Prefect Exporter Stale | Exporter metrics stop updating |
-| Flow Run Duration Regression | P95 duration exceeds threshold |
-| SPCS Error Log Spike via Loki | Error log rate exceeds threshold |
+| Prefect Exporter Stale | Exporter poll duration < 0.001s for 2 minutes |
+| Flow Run Duration Regression | P95 duration exceeds 300 seconds for 5 minutes |
+| SPCS Error Log Spike via Loki | >10 ERROR log entries in 5 minutes (sustained 2m) |
+| Flow Run Failure | Any new FAILED/CRASHED flow runs (auto-resolves) |
+| Prefect Worker Offline | All work pool workers offline for 5+ minutes |
 
-> Alert notifications route to the `prefect-alerts` contact point (webhook, configurable
-> via `GF_ALERTING_WEBHOOK_URL` env var). Notification policy groups by folder + alertname
-> with 30s group wait, 5m group interval, 4h repeat interval.
+> Alert notifications route to the `prefect-alerts` contact point (email via Gmail SMTP,
+> Slack opt-in). Notification policy groups by folder + alertname
+> with 30s group wait, 5m group interval, 12h repeat interval. All rules use
+> `noDataState: OK` to prevent alert storms when the monitoring stack is stopped.
 
 **Prometheus Recording Rules** — pre-computed metrics for dashboard performance and SLO tracking
 (`prometheus/rules/recording.yml`):
