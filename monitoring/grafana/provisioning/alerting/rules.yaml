@@ -173,6 +173,9 @@ groups:
           description: "{{ $value }} new failed or crashed flow runs in the last 5 minutes. Check Prefect UI for details."
 
       # ── Worker offline — no heartbeat in 5+ minutes ──────────────
+      # Only monitors pools with deployed workers (spcs, aws).
+      # Azure/GCP pools are placeholders with no VMs; excluding them
+      # prevents false-positive alerts.
       - uid: worker-offline
         title: Prefect Worker Offline
         condition: C
@@ -180,7 +183,7 @@ groups:
           - refId: A
             datasourceUid: prometheus
             model:
-              expr: prefect_work_pool_workers{status="ONLINE"}
+              expr: prefect_work_pool_workers{status="ONLINE", pool_name=~"spcs-pool|aws-pool|aws-pool-backup"}
               instant: true
               refId: A
             relativeTimeRange:
@@ -210,5 +213,5 @@ groups:
           severity: critical
           source: grafana
         annotations:
-          summary: "No online workers detected"
-          description: "All Prefect work pool workers have been offline for 5+ minutes. Flows will not execute."
+          summary: "No online workers in {{ $labels.pool_name }}"
+          description: "Work pool {{ $labels.pool_name }} has had 0 online workers for 5+ minutes. Flows targeting this pool will not execute."
