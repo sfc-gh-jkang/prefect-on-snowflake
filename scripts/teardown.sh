@@ -3,9 +3,10 @@
 # teardown.sh — Remove all Prefect SPCS infrastructure
 #
 # Usage:
-#   ./scripts/teardown.sh --connection my_connection          # Drop services + infra (keep DB)
-#   ./scripts/teardown.sh --connection my_connection --full    # Drop everything incl. DB + role
-#   ./scripts/teardown.sh --connection my_connection --force   # Skip confirmation prompt
+#   ./scripts/teardown.sh --connection my_connection                    # Drop services + infra (keep DB)
+#   ./scripts/teardown.sh --connection my_connection --keep-postgres    # Preserve Postgres (Managed + SPCS)
+#   ./scripts/teardown.sh --connection my_connection --full             # Drop everything incl. DB + role
+#   ./scripts/teardown.sh --connection my_connection --force            # Skip confirmation prompt
 #
 # Safe to run multiple times — all DROP statements use IF EXISTS.
 # =============================================================================
@@ -14,17 +15,20 @@ set -euo pipefail
 CONN=""
 FULL=false
 FORCE=false
+KEEP_PG=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --connection) CONN="${2:-}"; shift 2 ;;
-        --full)       FULL=true; shift ;;
-        --force)      FORCE=true; shift ;;
+        --connection)     CONN="${2:-}"; shift 2 ;;
+        --full)           FULL=true; shift ;;
+        --force)          FORCE=true; shift ;;
+        --keep-postgres)  KEEP_PG=true; shift ;;
         -h|--help)
-            echo "Usage: teardown.sh --connection <name> [--full] [--force]"
+            echo "Usage: teardown.sh --connection <name> [--keep-postgres] [--full] [--force]"
             echo ""
             echo "Options:"
             echo "  --connection NAME   Snow CLI connection name (required)"
+            echo "  --keep-postgres     Preserve Postgres (Managed instance + PF_POSTGRES service + INFRA_POOL)"
             echo "  --full              Also drop database PREFECT_DB and role PREFECT_ROLE"
             echo "  --force             Skip confirmation prompt"
             exit 0
@@ -38,7 +42,7 @@ done
 
 if [[ -z "$CONN" ]]; then
     echo "Error: --connection is required"
-    echo "Usage: teardown.sh --connection <name> [--full] [--force]"
+    echo "Usage: teardown.sh --connection <name> [--keep-postgres] [--full] [--force]"
     exit 1
 fi
 
@@ -49,6 +53,9 @@ echo "============================================="
 echo "  Prefect SPCS Teardown"
 echo "  Connection: $CONN"
 echo "  Mode:       $(if $FULL; then echo 'FULL (drop database + role)'; else echo 'Standard (keep database)'; fi)"
+if $KEEP_PG; then
+echo "  Postgres:   PRESERVED (PF_POSTGRES + INFRA_POOL kept)"
+fi
 echo "============================================="
 echo ""
 
@@ -79,7 +86,13 @@ _sql_admin() {
 
 # ── 1. Drop all services (must happen before compute pool drop) ──────────────
 echo "=== [1/10] Dropping services ==="
-for SVC in PF_WORKER PF_SERVICES PF_SERVER PF_MONITOR PF_POSTGRES PF_REDIS; do
+SERVICES=(PF_WORKER PF_SERVICES PF_SERVER PF_MONITOR PF_REDIS)
+if ! $KEEP_PG; then
+    SERVICES+=(PF_POSTGRES)
+else
+    echo "  Skipping PF_POSTGRES (--keep-postgres)"
+fi
+for SVC in "${SERVICES[@]}"; do
     echo "  Dropping $SVC..."
     _sql_prefect "DROP SERVICE IF EXISTS ${DB}.${SCHEMA}.$SVC FORCE"
 done
@@ -102,7 +115,13 @@ _sql_prefect "DROP FUNCTION IF EXISTS ${DB}.${SCHEMA}.GET_PREFECT_PAT()"
 # ── 3. Suspend compute pools ────────────────────────────────────────────────
 echo ""
 echo "=== [3/10] Suspending compute pools ==="
-for POOL in PREFECT_WORKER_POOL PREFECT_CORE_POOL PREFECT_INFRA_POOL PREFECT_DASHBOARD_POOL PREFECT_MONITOR_POOL; do
+POOLS=(PREFECT_WORKER_POOL PREFECT_CORE_POOL PREFECT_DASHBOARD_POOL PREFECT_MONITOR_POOL)
+if ! $KEEP_PG; then
+    POOLS+=(PREFECT_INFRA_POOL)
+else
+    echo "  Skipping PREFECT_INFRA_POOL (--keep-postgres)"
+fi
+for POOL in "${POOLS[@]}"; do
     echo "  Suspending $POOL..."
     _sql_admin "ALTER COMPUTE POOL IF EXISTS $POOL SUSPEND"
 done
@@ -113,14 +132,14 @@ sleep 15
 # ── 4. Drop compute pools ───────────────────────────────────────────────────
 echo ""
 echo "=== [4/10] Dropping compute pools ==="
-for POOL in PREFECT_WORKER_POOL PREFECT_CORE_POOL PREFECT_INFRA_POOL PREFECT_DASHBOARD_POOL PREFECT_MONITOR_POOL; do
+for POOL in "${POOLS[@]}"; do
     echo "  Stopping all services on $POOL..."
     _sql_admin "ALTER COMPUTE POOL IF EXISTS $POOL STOP ALL"
 done
 
 sleep 5
 
-for POOL in PREFECT_WORKER_POOL PREFECT_CORE_POOL PREFECT_INFRA_POOL PREFECT_DASHBOARD_POOL PREFECT_MONITOR_POOL; do
+for POOL in "${POOLS[@]}"; do
     echo "  Dropping $POOL..."
     _sql_admin "DROP COMPUTE POOL IF EXISTS $POOL"
 done
@@ -136,9 +155,15 @@ done
 # ── 6. Drop secrets ──────────────────────────────────────────────────────────
 echo ""
 echo "=== [6/10] Dropping secrets ==="
-for SECRET in PREFECT_DB_PASSWORD GIT_ACCESS_TOKEN PREFECT_SVC_PAT \
-              POSTGRES_EXPORTER_DSN GRAFANA_ADMIN_PASSWORD GRAFANA_DB_DSN \
-              GRAFANA_SMTP_PASSWORD SLACK_WEBHOOK_URL; do
+SECRETS=(PREFECT_DB_PASSWORD GIT_ACCESS_TOKEN PREFECT_SVC_PAT
+         GRAFANA_ADMIN_PASSWORD GRAFANA_DB_DSN
+         GRAFANA_SMTP_PASSWORD GRAFANA_SMTP_USER SLACK_WEBHOOK_URL)
+if ! $KEEP_PG; then
+    SECRETS+=(POSTGRES_EXPORTER_DSN PREFECT_PG_PASSWORD)
+else
+    echo "  Skipping POSTGRES_EXPORTER_DSN, PREFECT_PG_PASSWORD (--keep-postgres)"
+fi
+for SECRET in "${SECRETS[@]}"; do
     echo "  Dropping $SECRET..."
     _sql_prefect "DROP SECRET IF EXISTS ${DB}.${SCHEMA}.$SECRET"
 done
@@ -146,7 +171,13 @@ done
 # ── 7. Drop external access integrations ─────────────────────────────────────
 echo ""
 echo "=== [7/10] Dropping external access integrations ==="
-for EAI in PREFECT_WORKER_EAI PREFECT_DASHBOARD_EAI PREFECT_MONITOR_EAI PREFECT_PG_EAI; do
+EAIS=(PREFECT_WORKER_EAI PREFECT_DASHBOARD_EAI PREFECT_MONITOR_EAI)
+if ! $KEEP_PG; then
+    EAIS+=(PREFECT_PG_EAI)
+else
+    echo "  Skipping PREFECT_PG_EAI (--keep-postgres)"
+fi
+for EAI in "${EAIS[@]}"; do
     echo "  Dropping $EAI..."
     _sql_admin "DROP INTEGRATION IF EXISTS $EAI"
 done
@@ -154,7 +185,13 @@ done
 # ── 8. Drop network rules ───────────────────────────────────────────────────
 echo ""
 echo "=== [8/10] Dropping network rules ==="
-for RULE in PREFECT_WORKER_EGRESS_RULE DASHBOARD_EGRESS_RULE MONITOR_EGRESS_RULE PREFECT_PG_EGRESS_RULE; do
+RULES=(PREFECT_WORKER_EGRESS_RULE DASHBOARD_EGRESS_RULE MONITOR_EGRESS_RULE)
+if ! $KEEP_PG; then
+    RULES+=(PREFECT_PG_EGRESS_RULE)
+else
+    echo "  Skipping PREFECT_PG_EGRESS_RULE (--keep-postgres)"
+fi
+for RULE in "${RULES[@]}"; do
     echo "  Dropping $RULE..."
     _sql_prefect "DROP NETWORK RULE IF EXISTS ${DB}.${SCHEMA}.$RULE"
 done
