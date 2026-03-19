@@ -58,4 +58,4 @@ services:
     depends_on:
       auth-proxy-backup:
         condition: service_healthy
-    restart: on-failure
+    restart: unless-stopped

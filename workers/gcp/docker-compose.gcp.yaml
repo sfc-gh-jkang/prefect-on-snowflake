@@ -66,4 +66,4 @@ services:
     depends_on:
       auth-proxy:
         condition: service_healthy
-    restart: on-failure
+    restart: unless-stopped

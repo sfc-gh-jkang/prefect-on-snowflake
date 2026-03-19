@@ -50,19 +50,19 @@ pools:
     tag: aws-backup
     worker_dir: workers/aws
 
-  azure:
-    type: external
-    pool_name: azure-pool
-    suffix: azure
-    tag: azure
-    worker_dir: workers/azure
+  # azure:
+  #   type: external
+  #   pool_name: azure-pool
+  #   suffix: azure
+  #   tag: azure
+  #   worker_dir: workers/azure
 
-  azure-backup:
-    type: external
-    pool_name: azure-pool-backup
-    suffix: azure-backup
-    tag: azure-backup
-    worker_dir: workers/azure
+  # azure-backup:
+  #   type: external
+  #   pool_name: azure-pool-backup
+  #   suffix: azure-backup
+  #   tag: azure-backup
+  #   worker_dir: workers/azure
 
   gcp-backup:
     type: external

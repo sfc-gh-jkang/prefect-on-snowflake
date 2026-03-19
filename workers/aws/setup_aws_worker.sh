@@ -238,7 +238,7 @@ services:
     depends_on:
       auth-proxy:
         condition: service_healthy
-    restart: on-failure
+    restart: unless-stopped
 COMPOSEEOF
 
 # Write .env file with secrets (only accessible on this instance)
