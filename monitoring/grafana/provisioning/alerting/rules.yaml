@@ -47,7 +47,7 @@ groups:
           source: grafana
         annotations:
           summary: "Prefect exporter not polling"
-          description: "The prefect-exporter sidecar has not completed a poll cycle in 2+ minutes (last poll duration: {{ $values.B.Value }}s). The exporter process may be stuck or crashed. Check container logs: docker logs prefect-exporter."
+          description: "The prefect-exporter sidecar has not completed a poll cycle in 2+ minutes (last poll duration: {{ if $values.B }}{{ $values.B.Value }}s{{ else }}unknown{{ end }}). The exporter process may be stuck or crashed. Check container logs: docker logs prefect-exporter."
 
       # -- Flow run duration regression -----------------------------
       - uid: flow-duration-regression
@@ -87,8 +87,8 @@ groups:
           severity: warning
           source: grafana
         annotations:
-          summary: "Flow p95 duration {{ printf \"%.0f\" $values.B.Value }}s (threshold: 300s)"
-          description: "P95 flow run duration is {{ printf \"%.0f\" $values.B.Value }}s, exceeding the 300s threshold for 5+ minutes. Possible causes: slow Snowflake queries, resource contention, new flow logic, or upstream data volume increase."
+          summary: "Flow p95 duration {{ if $values.B }}{{ printf \"%.0f\" $values.B.Value }}s{{ else }}elevated{{ end }} (threshold: 300s)"
+          description: "P95 flow run duration is {{ if $values.B }}{{ printf \"%.0f\" $values.B.Value }}s{{ else }}unknown{{ end }}, exceeding the 300s threshold for 5+ minutes. Possible causes: slow Snowflake queries, resource contention, new flow logic, or upstream data volume increase."
 
       # -- SPCS error log spike (Loki) ------------------------------
       - uid: loki-error-spike
@@ -128,8 +128,8 @@ groups:
           severity: warning
           source: grafana
         annotations:
-          summary: "{{ printf \"%.0f\" $values.B.Value }} SPCS errors in 5 min (threshold: 10)"
-          description: "{{ printf \"%.0f\" $values.B.Value }} ERROR-level log entries from SPCS services in the last 5 minutes. Check Grafana Explore with Loki datasource: {job=\"spcs-logs\", severity=\"ERROR\"}."
+          summary: "{{ if $values.B }}{{ printf \"%.0f\" $values.B.Value }}{{ else }}Multiple{{ end }} SPCS errors in 5 min (threshold: 10)"
+          description: "{{ if $values.B }}{{ printf \"%.0f\" $values.B.Value }}{{ else }}Multiple{{ end }} ERROR-level log entries from SPCS services in the last 5 minutes. Check Grafana Explore with Loki datasource: {job=\"spcs-logs\", severity=\"ERROR\"}."
 
       # -- New flow run failures (rate-based, auto-resolves) --------
       - uid: flow-run-failure
@@ -169,8 +169,8 @@ groups:
           severity: warning
           source: grafana
         annotations:
-          summary: "{{ printf \"%.0f\" $values.B.Value }} flow run(s) failed in last 5 min"
-          description: "{{ printf \"%.0f\" $values.B.Value }} flow runs entered FAILED or CRASHED state in the last 5 minutes. Check Prefect UI: Flow Runs filtered by Failed/Crashed state for details and stack traces."
+          summary: "{{ if $values.B }}{{ printf \"%.0f\" $values.B.Value }}{{ else }}Multiple{{ end }} flow run(s) failed in last 5 min"
+          description: "{{ if $values.B }}{{ printf \"%.0f\" $values.B.Value }}{{ else }}Multiple{{ end }} flow runs entered FAILED or CRASHED state in the last 5 minutes. Check Prefect UI: Flow Runs filtered by Failed/Crashed state for details and stack traces."
 
       # -- Worker offline -- no heartbeat in 5+ minutes -------------
       # Monitors all pools with deployed workers (spcs, aws, gcp).
@@ -212,5 +212,5 @@ groups:
           source: grafana
         annotations:
           summary: "{{ $labels.pool_name }} has no online workers"
-          description: "Work pool {{ $labels.pool_name }} has {{ printf \"%.0f\" $values.B.Value }} online workers (need >= 1). No heartbeat received for 5+ minutes. The worker container or VM may be down. Flows targeting this pool will queue until a worker reconnects. Check: docker compose ps on the worker host, or SHOW SERVICES for SPCS pools."
+          description: "Work pool {{ $labels.pool_name }} has {{ if $values.B }}{{ printf \"%.0f\" $values.B.Value }}{{ else }}0{{ end }} online workers (need >= 1). No heartbeat received for 5+ minutes. The worker container or VM may be down. Flows targeting this pool will queue until a worker reconnects. Check: docker compose ps on the worker host, or SHOW SERVICES for SPCS pools."
 
