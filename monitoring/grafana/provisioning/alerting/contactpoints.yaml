@@ -23,6 +23,8 @@ contactPoints:
         settings:
           addresses: ${GF_SMTP_ALERT_RECIPIENTS}
           singleEmail: true
+          subject: '{{ template "default.title" . }}'
+          message: '{{ template "prefect.alerts" . }}'
         disableResolveMessage: false
       # Slack — DISABLED by default. To enable:
       #   1. Set SLACK_ENABLED=true in .env

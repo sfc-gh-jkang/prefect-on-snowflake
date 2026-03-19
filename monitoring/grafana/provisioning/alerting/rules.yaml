@@ -213,3 +213,4 @@ groups:
         annotations:
           summary: "{{ $labels.pool_name }} has no online workers"
           description: "Work pool {{ $labels.pool_name }} has {{ printf \"%.0f\" $values.B.Value }} online workers (need >= 1). No heartbeat received for 5+ minutes. The worker container or VM may be down. Flows targeting this pool will queue until a worker reconnects. Check: docker compose ps on the worker host, or SHOW SERVICES for SPCS pools."
+

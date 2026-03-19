@@ -1,0 +1,29 @@
+# Grafana notification templates -- custom email format that excludes
+# the cryptic A/B/C pipeline values from alert notifications.
+apiVersion: 1
+
+templates:
+  - orgId: 1
+    name: prefect-email
+    template: |
+      {{ define "prefect.alerts" -}}
+      {{ len .Alerts.Firing }} firing{{ if .Alerts.Resolved }}, {{ len .Alerts.Resolved }} resolved{{ end }}
+
+      {{ range .Alerts.Firing -}}
+      🔥 FIRING: {{ .Labels.alertname }}
+      {{ if .Annotations.summary }}Summary: {{ .Annotations.summary }}{{ end }}
+      {{ if .Annotations.description }}{{ .Annotations.description }}{{ end }}
+      {{ if .Labels.pool_name }}Pool: {{ .Labels.pool_name }}{{ end }}
+      Severity: {{ .Labels.severity }}
+      Started: {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}
+      {{ .GeneratorURL }}
+
+      {{ end -}}
+      {{ range .Alerts.Resolved -}}
+      ✅ RESOLVED: {{ .Labels.alertname }}
+      {{ if .Annotations.summary }}Summary: {{ .Annotations.summary }}{{ end }}
+      Severity: {{ .Labels.severity }}
+      Resolved: {{ .EndsAt.Format "2006-01-02 15:04:05 UTC" }}
+
+      {{ end -}}
+      {{ end }}
