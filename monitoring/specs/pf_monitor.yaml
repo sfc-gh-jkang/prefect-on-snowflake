@@ -110,6 +110,8 @@ spec:
           mountPath: /etc/grafana/provisioning
         - name: grafana-dashboards
           mountPath: /opt/grafana/dashboards
+        - name: grafana-emails
+          mountPath: /usr/share/grafana/public/emails
         - name: grafana-data
           mountPath: /var/lib/grafana
       readinessProbe:
@@ -281,6 +283,14 @@ spec:
       source: stage
       stageConfig:
         name: "@PREFECT_DB.PREFECT_SCHEMA.MONITOR_STAGE/grafana/dashboards"
+      uid: 472
+      gid: 0
+    # Grafana email templates — custom HTML overrides the built-in
+    # ng_alert_notification.html to remove the Values section from emails.
+    - name: grafana-emails
+      source: stage
+      stageConfig:
+        name: "@PREFECT_DB.PREFECT_SCHEMA.MONITOR_STAGE/grafana/emails"
       uid: 472
       gid: 0
     # Loki config — mounted from stage (v2 syntax, includes rules/ subdirectory)
