@@ -2719,13 +2719,13 @@ class TestMonitorSpecVolumes:
         self.volumes = {v["name"]: v for v in self.spec["spec"]["volumes"]}
 
     def test_has_seven_volumes(self):
-        assert len(self.volumes) == 7, (
-            f"Expected 7 volumes, got {len(self.volumes)}: {list(self.volumes.keys())}"
+        assert len(self.volumes) == 8, (
+            f"Expected 8 volumes, got {len(self.volumes)}: {list(self.volumes.keys())}"
         )
 
     def test_has_four_stage_mounts(self):
         stage_vols = [v for v in self.volumes.values() if v.get("source") == "stage"]
-        assert len(stage_vols) == 4, f"Expected 4 stage mounts, got {len(stage_vols)}"
+        assert len(stage_vols) == 5, f"Expected 5 stage mounts, got {len(stage_vols)}"
 
     def test_has_three_block_storage_volumes(self):
         block_vols = [v for v in self.volumes.values() if v.get("source") == "block"]

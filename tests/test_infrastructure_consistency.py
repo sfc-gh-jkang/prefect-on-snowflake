@@ -286,7 +286,9 @@ class TestGcpComposeDeepValidation:
     def test_worker_has_restart_policy(self, gcp_compose):
         for name, svc in gcp_compose["services"].items():
             if "worker" in name.lower():
-                assert svc.get("restart") == "on-failure", f"{name}: must have restart: on-failure"
+                assert svc.get("restart") == "unless-stopped", (
+                    f"{name}: must have restart: unless-stopped"
+                )
                 break
 
     def test_auth_proxy_has_restart_policy(self, gcp_compose):
