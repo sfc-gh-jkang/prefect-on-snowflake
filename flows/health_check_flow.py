@@ -10,6 +10,7 @@ import os
 
 from hooks import on_flow_failure
 from prefect import flow, get_run_logger, task
+from prefect.tasks import exponential_backoff
 from shared_utils import execute_query
 
 # ---------------------------------------------------------------------------
@@ -25,7 +26,9 @@ SCHEMA = os.environ.get("SNOWFLAKE_SCHEMA", "PREFECT_SCHEMA")
 # ---------------------------------------------------------------------------
 
 
-@task(retries=2, retry_delay_seconds=15)
+@task(
+    retries=2, retry_delay_seconds=exponential_backoff(backoff_factor=10), retry_jitter_factor=0.5
+)
 def check_snowflake_connectivity() -> bool:
     """Verify basic Snowflake connectivity with a simple query."""
     logger = get_run_logger()
@@ -35,7 +38,9 @@ def check_snowflake_connectivity() -> bool:
     return True
 
 
-@task(retries=2, retry_delay_seconds=15)
+@task(
+    retries=2, retry_delay_seconds=exponential_backoff(backoff_factor=10), retry_jitter_factor=0.5
+)
 def check_services_running() -> dict:
     """Check that all expected SPCS services are running.
 
@@ -76,7 +81,9 @@ def check_services_running() -> dict:
     }
 
 
-@task(retries=2, retry_delay_seconds=15)
+@task(
+    retries=2, retry_delay_seconds=exponential_backoff(backoff_factor=10), retry_jitter_factor=0.5
+)
 def check_compute_pools() -> dict:
     """Check that compute pools are active/idle (not suspended or failed)."""
     logger = get_run_logger()
@@ -109,7 +116,9 @@ def check_compute_pools() -> dict:
     }
 
 
-@task(retries=2, retry_delay_seconds=15)
+@task(
+    retries=2, retry_delay_seconds=exponential_backoff(backoff_factor=10), retry_jitter_factor=0.5
+)
 def check_database_objects() -> dict:
     """Verify that key database objects (stages, secrets) exist."""
     logger = get_run_logger()
@@ -146,7 +155,7 @@ def check_database_objects() -> dict:
     name="health-check",
     log_prints=True,
     retries=1,
-    retry_delay_seconds=30,
+    retry_delay_seconds=exponential_backoff(backoff_factor=10),
     on_failure=[on_flow_failure],
 )
 def health_check():

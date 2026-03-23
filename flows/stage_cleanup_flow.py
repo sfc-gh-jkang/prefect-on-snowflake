@@ -10,6 +10,7 @@ import os
 
 from hooks import on_flow_failure
 from prefect import flow, get_run_logger, task
+from prefect.tasks import exponential_backoff
 from shared_utils import execute_ddl, execute_query
 
 # ---------------------------------------------------------------------------
@@ -27,7 +28,9 @@ STAGES_TO_CLEAN = [
 # ---------------------------------------------------------------------------
 
 
-@task(retries=2, retry_delay_seconds=30)
+@task(
+    retries=2, retry_delay_seconds=exponential_backoff(backoff_factor=10), retry_jitter_factor=0.5
+)
 def list_stage_files(stage: str) -> list[dict]:
     """List all files in a stage with their last-modified timestamps."""
     logger = get_run_logger()
@@ -52,7 +55,9 @@ def list_stage_files(stage: str) -> list[dict]:
     return files
 
 
-@task(retries=1, retry_delay_seconds=10)
+@task(
+    retries=1, retry_delay_seconds=exponential_backoff(backoff_factor=10), retry_jitter_factor=0.5
+)
 def identify_stale_files(files: list[dict], retention_days: int) -> list[str]:
     """Identify files older than retention_days.
 
@@ -84,7 +89,9 @@ def identify_stale_files(files: list[dict], retention_days: int) -> list[str]:
     return stale
 
 
-@task(retries=1, retry_delay_seconds=10)
+@task(
+    retries=1, retry_delay_seconds=exponential_backoff(backoff_factor=10), retry_jitter_factor=0.5
+)
 def remove_files(stage: str, file_names: list[str]) -> int:
     """Remove stale files from the stage."""
     logger = get_run_logger()
@@ -108,7 +115,7 @@ def remove_files(stage: str, file_names: list[str]) -> int:
     name="stage-cleanup",
     log_prints=True,
     retries=1,
-    retry_delay_seconds=120,
+    retry_delay_seconds=exponential_backoff(backoff_factor=60),
     on_failure=[on_flow_failure],
 )
 def stage_cleanup(retention_days: int = DEFAULT_RETENTION_DAYS):

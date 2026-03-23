@@ -692,8 +692,14 @@ FlowSpec(
 ```python
 # flows/my_flow.py
 from prefect import flow
+from prefect.tasks import exponential_backoff
 
-@flow(name="my-flow", log_prints=True)
+@flow(
+    name="my-flow",
+    log_prints=True,
+    retries=2,
+    retry_delay_seconds=exponential_backoff(backoff_factor=10),
+)
 def my_flow(region: str = "us-east", dry_run: bool = False):
     print(f"Running for {region}, dry_run={dry_run}")
 ```
@@ -832,6 +838,48 @@ Key requirements for nested flows:
 - `shared_utils.py` at the flows root is importable by any flow at any depth
 - Prefect's `load_script_as_module` adds both the script's parent dir and the working directory to `sys.path`
 
+## Retry Best Practices
+
+All flows and tasks with retries **must** use `exponential_backoff()` with
+`retry_jitter_factor` instead of fixed `retry_delay_seconds` values. Fixed delays
+cause correlated retries (thundering herd) when multiple flow runs fail
+simultaneously — this contributed to a CPU spin-loop crash on the GCP backup
+worker.
+
+```python
+from prefect import flow, task
+from prefect.tasks import exponential_backoff
+
+# Tasks: use backoff_factor=10 (delays: 10s, 20s, 40s, ...)
+@task(
+    retries=3,
+    retry_delay_seconds=exponential_backoff(backoff_factor=10),
+    retry_jitter_factor=0.5,  # task-only: adds up to 50% random jitter
+)
+def my_task():
+    ...
+
+# Flows: exponential_backoff works, but retry_jitter_factor is NOT supported
+@flow(
+    retries=2,
+    retry_delay_seconds=exponential_backoff(backoff_factor=10),
+)
+def my_flow():
+    ...
+```
+
+**Rules:**
+
+- **Never** use a bare integer for `retry_delay_seconds` (e.g., `retry_delay_seconds=30`)
+- **Always** import from `prefect.tasks`: `from prefect.tasks import exponential_backoff`
+  (works for both `@task` and `@flow` decorators)
+- **Tasks only:** set `retry_jitter_factor=0.5` (adds up to 50% random jitter).
+  This parameter is **not supported** on `@flow` — it will raise `TypeError`
+- `backoff_factor` is the base delay in seconds; subsequent retries double it
+  (10 → 20 → 40 → 80 ...)
+- For long-running flows (data quality, stage cleanup), use `backoff_factor=60`
+- For short tasks (health checks, API calls), use `backoff_factor=10`
+
 ## Testing
 
 ```bash
@@ -856,7 +904,7 @@ PREFECT_SPCS_API_URL=https://<endpoint>/api SNOWFLAKE_PAT=<pat> uv run pytest -m
 | `test_pat_rotation.py` | 50+ | PAT rotation flow: JWT decoding, consumer inventory, .env updates, SQL generation, GitLab API, Snowflake secrets, compose integrity |
 | `test_cross_file_consistency.py` | 30+ | Pull step env vars match across prefect.yaml and all worker compose files |
 | `test_prefect_yaml.py` | 60+ | prefect.yaml: deployment entries, schedules, work pools, pull steps |
-| `test_flow_syntax.py` | 70+ | Flow file syntax: imports, decorators, parameters, type hints |
+| `test_flow_syntax.py` | 110+ | Flow file syntax: imports, decorators, parameters, type hints, retry patterns (exponential_backoff, jitter, no fixed delays) |
 | `test_spec_schemas.py` | 30+ | SPCS spec YAML: container schemas, secrets, volumes, CPU limits |
 
 ## CI/CD (GitLab)

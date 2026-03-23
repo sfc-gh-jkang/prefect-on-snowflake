@@ -6,6 +6,7 @@ must have outbound network access to reach httpbin.org.
 
 from hooks import on_flow_failure
 from prefect import flow, task
+from prefect.tasks import exponential_backoff
 
 # Allowed target URLs — prevents SSRF via deployment parameters.
 ALLOWED_URLS = frozenset(
@@ -36,7 +37,7 @@ def call_external_api(url: str) -> dict:
     name="external-api-flow",
     log_prints=True,
     retries=2,
-    retry_delay_seconds=10,
+    retry_delay_seconds=exponential_backoff(backoff_factor=10),
     on_failure=[on_flow_failure],
 )
 def external_api_flow(url: str = "https://httpbin.org/get"):

@@ -6,6 +6,7 @@ module.  Tests SPCS stage subdirectory mounts and GCP bind mounts.
 
 from hooks import on_flow_failure
 from prefect import flow, task
+from prefect.tasks import exponential_backoff
 
 # --- THIS IS THE KEY TEST ---
 # Sibling import: Prefect adds the script's parent dir to sys.path,
@@ -75,7 +76,7 @@ def verify_and_cleanup() -> dict:
     name="analytics-revenue",
     log_prints=True,
     retries=2,
-    retry_delay_seconds=30,
+    retry_delay_seconds=exponential_backoff(backoff_factor=10),
     on_failure=[on_flow_failure],
 )
 def analytics_revenue():

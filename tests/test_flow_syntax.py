@@ -690,6 +690,9 @@ class TestFlowRetries:
         ("snowflake_flow.py", "snowflake-etl"),
         ("external_api_flow.py", "external-api-flow"),
         ("e2e_test_flow.py", "e2e-pipeline-test"),
+        ("health_check_flow.py", "health-check"),
+        ("data_quality_flow.py", "data-quality-check"),
+        ("stage_cleanup_flow.py", "stage-cleanup"),
     ]
 
     @pytest.mark.parametrize("filename,_", PRODUCTION_FLOWS, ids=[f[0] for f in PRODUCTION_FLOWS])
@@ -724,6 +727,216 @@ class TestFlowRetries:
         source = (FLOWS_DIR / "analytics" / "reports" / "quarterly_flow.py").read_text()
         assert "retries=" in source
         assert "on_failure=" in source
+
+
+class TestRetryPatterns:
+    """Validate retry best practices across all flow files.
+
+    These tests enforce the exponential_backoff + jitter patterns documented
+    in README.md under "Retry Best Practices".  They would have caught the
+    TypeError caused by adding retry_jitter_factor to @flow decorators
+    (only supported on @task).
+    """
+
+    # All flow files that use retries (top-level + nested directories).
+    RETRY_FLOW_FILES = [
+        FLOWS_DIR / "snowflake_flow.py",
+        FLOWS_DIR / "external_api_flow.py",
+        FLOWS_DIR / "e2e_test_flow.py",
+        FLOWS_DIR / "health_check_flow.py",
+        FLOWS_DIR / "data_quality_flow.py",
+        FLOWS_DIR / "stage_cleanup_flow.py",
+        FLOWS_DIR / "analytics" / "revenue_flow.py",
+        FLOWS_DIR / "analytics" / "reports" / "quarterly_flow.py",
+    ]
+
+    # ------------------------------------------------------------------ #
+    # Helper: extract decorator info via AST
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _get_decorator_info(filepath):
+        """Parse a flow file and return decorator metadata.
+
+        Returns a list of dicts:
+          {
+            "name": "flow" or "task",
+            "func_name": name of the decorated function,
+            "keywords": {kw.arg: kw AST node},
+            "lineno": decorator line number,
+          }
+        """
+        source = filepath.read_text()
+        tree = ast.parse(source, filename=str(filepath))
+        results = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            for dec in node.decorator_list:
+                # Handle @flow(...) and @task(...) — these are ast.Call nodes
+                if isinstance(dec, ast.Call):
+                    func = dec.func
+                    if isinstance(func, ast.Name) and func.id in ("flow", "task"):
+                        keywords = {kw.arg: kw.value for kw in dec.keywords}
+                        results.append(
+                            {
+                                "name": func.id,
+                                "func_name": node.name,
+                                "keywords": keywords,
+                                "lineno": dec.lineno,
+                            }
+                        )
+                # Handle bare @flow / @task (no parentheses)
+                elif isinstance(dec, ast.Name) and dec.id in ("flow", "task"):
+                    results.append(
+                        {
+                            "name": dec.id,
+                            "func_name": node.name,
+                            "keywords": {},
+                            "lineno": dec.lineno,
+                        }
+                    )
+        return results
+
+    # ------------------------------------------------------------------ #
+    # Test: @flow must NEVER use retry_jitter_factor (TypeError at import)
+    # ------------------------------------------------------------------ #
+    @pytest.mark.parametrize(
+        "filepath", RETRY_FLOW_FILES, ids=[str(f.name) for f in RETRY_FLOW_FILES]
+    )
+    def test_flow_decorator_no_retry_jitter_factor(self, filepath):
+        """@flow does not support retry_jitter_factor — it raises TypeError."""
+        for dec in self._get_decorator_info(filepath):
+            if dec["name"] == "flow" and "retry_jitter_factor" in dec["keywords"]:
+                pytest.fail(
+                    f"{filepath.name}:{dec['lineno']} — @flow(retry_jitter_factor=...) "
+                    f"on '{dec['func_name']}' is invalid; retry_jitter_factor is "
+                    f"only supported on @task"
+                )
+
+    # ------------------------------------------------------------------ #
+    # Test: all decorators with retries must use exponential_backoff()
+    # ------------------------------------------------------------------ #
+    @pytest.mark.parametrize(
+        "filepath", RETRY_FLOW_FILES, ids=[str(f.name) for f in RETRY_FLOW_FILES]
+    )
+    def test_retry_delay_uses_exponential_backoff(self, filepath):
+        """retry_delay_seconds must use exponential_backoff(), not a bare int."""
+        for dec in self._get_decorator_info(filepath):
+            kw = dec["keywords"]
+            if "retries" not in kw:
+                continue
+            delay = kw.get("retry_delay_seconds")
+            if delay is None:
+                pytest.fail(
+                    f"{filepath.name}:{dec['lineno']} — @{dec['name']} "
+                    f"'{dec['func_name']}' has retries but no retry_delay_seconds"
+                )
+            # delay must be a Call node (e.g. exponential_backoff(...)), not a
+            # Constant (bare int like 30) or other literal.
+            if isinstance(delay, ast.Constant):
+                pytest.fail(
+                    f"{filepath.name}:{dec['lineno']} — @{dec['name']} "
+                    f"'{dec['func_name']}' uses a fixed retry_delay_seconds="
+                    f"{delay.value}; use exponential_backoff() instead"
+                )
+            if isinstance(delay, ast.Call):
+                func = delay.func
+                name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "?")
+                if name != "exponential_backoff":
+                    pytest.fail(
+                        f"{filepath.name}:{dec['lineno']} — @{dec['name']} "
+                        f"'{dec['func_name']}' retry_delay_seconds uses "
+                        f"'{name}(...)'; expected exponential_backoff()"
+                    )
+
+    # ------------------------------------------------------------------ #
+    # Test: @task with retries must have retry_jitter_factor
+    # ------------------------------------------------------------------ #
+    @pytest.mark.parametrize(
+        "filepath", RETRY_FLOW_FILES, ids=[str(f.name) for f in RETRY_FLOW_FILES]
+    )
+    def test_task_with_retries_has_jitter(self, filepath):
+        """Every @task that has retries should also set retry_jitter_factor."""
+        for dec in self._get_decorator_info(filepath):
+            if dec["name"] != "task":
+                continue
+            if "retries" not in dec["keywords"]:
+                continue
+            if "retry_jitter_factor" not in dec["keywords"]:
+                pytest.fail(
+                    f"{filepath.name}:{dec['lineno']} — @task "
+                    f"'{dec['func_name']}' has retries but is missing "
+                    f"retry_jitter_factor (should be 0.5)"
+                )
+
+    # ------------------------------------------------------------------ #
+    # Test: files with retries must import exponential_backoff
+    # ------------------------------------------------------------------ #
+    @pytest.mark.parametrize(
+        "filepath", RETRY_FLOW_FILES, ids=[str(f.name) for f in RETRY_FLOW_FILES]
+    )
+    def test_imports_exponential_backoff(self, filepath):
+        """Files using retries must import exponential_backoff from prefect.tasks."""
+        source = filepath.read_text()
+        assert "from prefect.tasks import exponential_backoff" in source, (
+            f"{filepath.name}: missing 'from prefect.tasks import exponential_backoff'"
+        )
+
+    # ------------------------------------------------------------------ #
+    # Test: runtime import — catches TypeErrors from bad decorator kwargs
+    # ------------------------------------------------------------------ #
+    @pytest.mark.parametrize(
+        "filepath", RETRY_FLOW_FILES, ids=[str(f.name) for f in RETRY_FLOW_FILES]
+    )
+    def test_flow_module_imports_without_error(self, filepath):
+        """Importing the module must not raise (e.g. TypeError from bad kwargs).
+
+        This is the ultimate guard — even if AST checks miss something,
+        a runtime import will catch TypeError from unsupported decorator
+        parameters like retry_jitter_factor on @flow.
+        """
+        import importlib
+        import sys
+
+        # Build module name relative to the flows package.
+        rel = filepath.relative_to(FLOWS_DIR)
+        parts = list(rel.with_suffix("").parts)
+        module_name = "flows." + ".".join(parts)
+
+        # Remove from cache so we get a fresh import each time.
+        sys.modules.pop(module_name, None)
+        try:
+            importlib.import_module(module_name)
+        except TypeError as exc:
+            pytest.fail(
+                f"Importing {module_name} raised TypeError: {exc}  — "
+                f"check for unsupported decorator parameters"
+            )
+        except Exception:
+            # Other import errors (missing env vars, network, etc.) are not
+            # the concern of this test — only TypeError from bad decorators.
+            pass
+
+    # ------------------------------------------------------------------ #
+    # Test: scan ALL flow files for stale fixed-delay patterns
+    # ------------------------------------------------------------------ #
+    def test_no_fixed_retry_delay_anywhere(self):
+        """No flow file should use retry_delay_seconds=<integer>."""
+        # Match patterns like retry_delay_seconds=30 or retry_delay_seconds = 120
+        fixed_delay = re.compile(r"retry_delay_seconds\s*=\s*\d+")
+        violations = []
+        all_flow_files = list(FLOWS_DIR.rglob("*.py"))
+        for fpath in all_flow_files:
+            if fpath.name == "__init__.py":
+                continue
+            source = fpath.read_text()
+            for i, line in enumerate(source.splitlines(), 1):
+                if fixed_delay.search(line) and "# noqa: retry-fixed-ok" not in line:
+                    violations.append(f"{fpath.name}:{i}: {line.strip()}")
+        assert not violations, (
+            "Fixed retry_delay_seconds values found (use exponential_backoff):\n"
+            + "\n".join(violations)
+        )
 
 
 class TestDeploymentDiff:

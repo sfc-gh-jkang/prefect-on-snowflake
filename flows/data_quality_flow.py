@@ -13,6 +13,7 @@ from e2e_test_flow import cleanup as e2e_cleanup
 from e2e_test_flow import e2e_pipeline_test
 from hooks import on_flow_failure
 from prefect import flow, get_run_logger, task
+from prefect.tasks import exponential_backoff
 from shared_utils import execute_query, table_name
 
 # ---------------------------------------------------------------------------
@@ -38,7 +39,9 @@ TABLE_CHECKS: list[dict] = [
 # ---------------------------------------------------------------------------
 
 
-@task(retries=3, retry_delay_seconds=30)
+@task(
+    retries=3, retry_delay_seconds=exponential_backoff(backoff_factor=10), retry_jitter_factor=0.5
+)
 def check_table_exists(tbl: str) -> bool:
     """Verify the table exists via direct query (not INFORMATION_SCHEMA)."""
     logger = get_run_logger()
@@ -52,7 +55,9 @@ def check_table_exists(tbl: str) -> bool:
         return False
 
 
-@task(retries=3, retry_delay_seconds=30)
+@task(
+    retries=3, retry_delay_seconds=exponential_backoff(backoff_factor=10), retry_jitter_factor=0.5
+)
 def check_row_count(tbl: str, min_rows: int) -> dict:
     """Check that a table has at least min_rows rows."""
     logger = get_run_logger()
@@ -66,7 +71,9 @@ def check_row_count(tbl: str, min_rows: int) -> dict:
     return {"table": tbl, "count": count, "min_rows": min_rows, "passed": passed}
 
 
-@task(retries=3, retry_delay_seconds=30)
+@task(
+    retries=3, retry_delay_seconds=exponential_backoff(backoff_factor=10), retry_jitter_factor=0.5
+)
 def check_freshness(tbl: str, max_hours: int) -> dict:
     """Check that a table was modified within the last max_hours hours.
 
@@ -106,7 +113,7 @@ def check_freshness(tbl: str, max_hours: int) -> dict:
     name="data-quality-check",
     log_prints=True,
     retries=1,
-    retry_delay_seconds=120,
+    retry_delay_seconds=exponential_backoff(backoff_factor=60),
     on_failure=[on_flow_failure],
 )
 def data_quality_check():
