@@ -6,7 +6,6 @@ running on Snowpark Container Services.
 
 from hooks import on_flow_failure
 from prefect import flow, task
-from prefect.tasks import exponential_backoff
 from shared_utils import get_snowflake_connection
 
 # Safe demo queries — no user-supplied SQL allowed.
@@ -40,7 +39,7 @@ def query_snowflake() -> list:
     name="snowflake-etl",
     log_prints=True,
     retries=2,
-    retry_delay_seconds=exponential_backoff(backoff_factor=10),
+    retry_delay_seconds=[10, 20],
     on_failure=[on_flow_failure],
 )
 def snowflake_etl():

@@ -8,7 +8,6 @@ import time
 
 from hooks import on_flow_failure
 from prefect import flow, task
-from prefect.tasks import exponential_backoff
 from shared_utils import execute_ddl, execute_query
 
 # ---------------------------------------------------------------------------
@@ -135,7 +134,7 @@ def cleanup() -> None:
     name="e2e-pipeline-test",
     log_prints=True,
     retries=1,
-    retry_delay_seconds=exponential_backoff(backoff_factor=30),
+    retry_delay_seconds=[30],
     on_failure=[on_flow_failure],
 )
 def e2e_pipeline_test(skip_cleanup: bool = False):

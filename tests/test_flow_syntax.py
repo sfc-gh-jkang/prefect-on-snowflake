@@ -814,13 +814,18 @@ class TestRetryPatterns:
                 )
 
     # ------------------------------------------------------------------ #
-    # Test: all decorators with retries must use exponential_backoff()
+    # Test: retry_delay_seconds must not be a bare integer
     # ------------------------------------------------------------------ #
     @pytest.mark.parametrize(
         "filepath", RETRY_FLOW_FILES, ids=[str(f.name) for f in RETRY_FLOW_FILES]
     )
-    def test_retry_delay_uses_exponential_backoff(self, filepath):
-        """retry_delay_seconds must use exponential_backoff(), not a bare int."""
+    def test_retry_delay_not_bare_int(self, filepath):
+        """retry_delay_seconds must never be a bare integer (e.g. 30).
+
+        Acceptable forms:
+          - @task: exponential_backoff(backoff_factor=N)  (callable)
+          - @flow: [10, 20] pre-computed list (Pydantic can't serialize callables)
+        """
         for dec in self._get_decorator_info(filepath):
             kw = dec["keywords"]
             if "retries" not in kw:
@@ -831,23 +836,70 @@ class TestRetryPatterns:
                     f"{filepath.name}:{dec['lineno']} — @{dec['name']} "
                     f"'{dec['func_name']}' has retries but no retry_delay_seconds"
                 )
-            # delay must be a Call node (e.g. exponential_backoff(...)), not a
-            # Constant (bare int like 30) or other literal.
             if isinstance(delay, ast.Constant):
                 pytest.fail(
                     f"{filepath.name}:{dec['lineno']} — @{dec['name']} "
                     f"'{dec['func_name']}' uses a fixed retry_delay_seconds="
-                    f"{delay.value}; use exponential_backoff() instead"
+                    f"{delay.value}; use exponential_backoff() on tasks or "
+                    f"a pre-computed list on flows"
                 )
+
+    # ------------------------------------------------------------------ #
+    # Test: @task retries must use exponential_backoff() callable
+    # ------------------------------------------------------------------ #
+    @pytest.mark.parametrize(
+        "filepath", RETRY_FLOW_FILES, ids=[str(f.name) for f in RETRY_FLOW_FILES]
+    )
+    def test_task_retry_delay_uses_exponential_backoff(self, filepath):
+        """@task retry_delay_seconds must use exponential_backoff()."""
+        for dec in self._get_decorator_info(filepath):
+            if dec["name"] != "task" or "retries" not in dec["keywords"]:
+                continue
+            delay = dec["keywords"].get("retry_delay_seconds")
+            if not isinstance(delay, ast.Call):
+                pytest.fail(
+                    f"{filepath.name}:{dec['lineno']} — @task "
+                    f"'{dec['func_name']}' retry_delay_seconds should be "
+                    f"exponential_backoff(...)"
+                )
+            func = delay.func
+            name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "?")
+            if name != "exponential_backoff":
+                pytest.fail(
+                    f"{filepath.name}:{dec['lineno']} — @task "
+                    f"'{dec['func_name']}' retry_delay_seconds uses "
+                    f"'{name}(...)'; expected exponential_backoff()"
+                )
+
+    # ------------------------------------------------------------------ #
+    # Test: @flow retries must use a List (not callable — causes
+    #       PydanticSerializationError on the server)
+    # ------------------------------------------------------------------ #
+    @pytest.mark.parametrize(
+        "filepath", RETRY_FLOW_FILES, ids=[str(f.name) for f in RETRY_FLOW_FILES]
+    )
+    def test_flow_retry_delay_is_list(self, filepath):
+        """@flow retry_delay_seconds must be a list, not a callable.
+
+        Prefect's flow engine serialises retry_delay_seconds via Pydantic
+        when updating the flow run.  Callables (like exponential_backoff())
+        cause PydanticSerializationError: Unable to serialize unknown type:
+        <class 'function'>.  Use a pre-computed list instead: [10, 20].
+        """
+        for dec in self._get_decorator_info(filepath):
+            if dec["name"] != "flow" or "retries" not in dec["keywords"]:
+                continue
+            delay = dec["keywords"].get("retry_delay_seconds")
             if isinstance(delay, ast.Call):
                 func = delay.func
                 name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "?")
-                if name != "exponential_backoff":
-                    pytest.fail(
-                        f"{filepath.name}:{dec['lineno']} — @{dec['name']} "
-                        f"'{dec['func_name']}' retry_delay_seconds uses "
-                        f"'{name}(...)'; expected exponential_backoff()"
-                    )
+                pytest.fail(
+                    f"{filepath.name}:{dec['lineno']} — @flow "
+                    f"'{dec['func_name']}' uses retry_delay_seconds="
+                    f"{name}(...) which is a callable. Prefect cannot "
+                    f"serialize callables on @flow — use a pre-computed "
+                    f"list like [10, 20] instead"
+                )
 
     # ------------------------------------------------------------------ #
     # Test: @task with retries must have retry_jitter_factor
@@ -870,16 +922,23 @@ class TestRetryPatterns:
                 )
 
     # ------------------------------------------------------------------ #
-    # Test: files with retries must import exponential_backoff
+    # Test: files with @task retries must import exponential_backoff
     # ------------------------------------------------------------------ #
     @pytest.mark.parametrize(
         "filepath", RETRY_FLOW_FILES, ids=[str(f.name) for f in RETRY_FLOW_FILES]
     )
-    def test_imports_exponential_backoff(self, filepath):
-        """Files using retries must import exponential_backoff from prefect.tasks."""
+    def test_imports_exponential_backoff_if_needed(self, filepath):
+        """Files with @task retries must import exponential_backoff."""
+        has_task_retries = any(
+            d["name"] == "task" and "retries" in d["keywords"]
+            for d in self._get_decorator_info(filepath)
+        )
+        if not has_task_retries:
+            return  # flow-only files use pre-computed lists, no import needed
         source = filepath.read_text()
         assert "from prefect.tasks import exponential_backoff" in source, (
-            f"{filepath.name}: missing 'from prefect.tasks import exponential_backoff'"
+            f"{filepath.name}: has @task with retries but missing "
+            f"'from prefect.tasks import exponential_backoff'"
         )
 
     # ------------------------------------------------------------------ #

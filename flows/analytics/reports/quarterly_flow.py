@@ -18,7 +18,6 @@ from formatters import format_currency, format_row
 # --- Hooks ---
 from hooks import on_flow_failure
 from prefect import flow, task
-from prefect.tasks import exponential_backoff
 
 # --- Pattern 3: Top-level root module import ---
 from shared_utils import APP_VERSION, table_name
@@ -110,7 +109,7 @@ def verify_and_cleanup() -> dict:
     name="quarterly-report",
     log_prints=True,
     retries=1,
-    retry_delay_seconds=exponential_backoff(backoff_factor=30),
+    retry_delay_seconds=[30],
     on_failure=[on_flow_failure],
 )
 def quarterly_report():

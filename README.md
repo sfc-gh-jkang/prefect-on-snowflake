@@ -692,13 +692,12 @@ FlowSpec(
 ```python
 # flows/my_flow.py
 from prefect import flow
-from prefect.tasks import exponential_backoff
 
 @flow(
     name="my-flow",
     log_prints=True,
     retries=2,
-    retry_delay_seconds=exponential_backoff(backoff_factor=10),
+    retry_delay_seconds=[10, 20],
 )
 def my_flow(region: str = "us-east", dry_run: bool = False):
     print(f"Running for {region}, dry_run={dry_run}")
@@ -840,17 +839,16 @@ Key requirements for nested flows:
 
 ## Retry Best Practices
 
-All flows and tasks with retries **must** use `exponential_backoff()` with
-`retry_jitter_factor` instead of fixed `retry_delay_seconds` values. Fixed delays
-cause correlated retries (thundering herd) when multiple flow runs fail
-simultaneously — this contributed to a CPU spin-loop crash on the GCP backup
-worker.
+All flows and tasks with retries **must** avoid fixed `retry_delay_seconds`
+values. Fixed delays cause correlated retries (thundering herd) when multiple
+flow runs fail simultaneously — this contributed to a CPU spin-loop crash on the
+GCP backup worker.
 
 ```python
 from prefect import flow, task
 from prefect.tasks import exponential_backoff
 
-# Tasks: use backoff_factor=10 (delays: 10s, 20s, 40s, ...)
+# Tasks: use exponential_backoff callable (delays: 10s, 20s, 40s, ...)
 @task(
     retries=3,
     retry_delay_seconds=exponential_backoff(backoff_factor=10),
@@ -859,10 +857,10 @@ from prefect.tasks import exponential_backoff
 def my_task():
     ...
 
-# Flows: exponential_backoff works, but retry_jitter_factor is NOT supported
+# Flows: use a PRE-COMPUTED list — callables cause PydanticSerializationError
 @flow(
     retries=2,
-    retry_delay_seconds=exponential_backoff(backoff_factor=10),
+    retry_delay_seconds=[10, 20],  # same progression as backoff_factor=10
 )
 def my_flow():
     ...
@@ -871,13 +869,14 @@ def my_flow():
 **Rules:**
 
 - **Never** use a bare integer for `retry_delay_seconds` (e.g., `retry_delay_seconds=30`)
-- **Always** import from `prefect.tasks`: `from prefect.tasks import exponential_backoff`
-  (works for both `@task` and `@flow` decorators)
-- **Tasks only:** set `retry_jitter_factor=0.5` (adds up to 50% random jitter).
-  This parameter is **not supported** on `@flow` — it will raise `TypeError`
-- `backoff_factor` is the base delay in seconds; subsequent retries double it
-  (10 → 20 → 40 → 80 ...)
-- For long-running flows (data quality, stage cleanup), use `backoff_factor=60`
+- **Tasks:** use `exponential_backoff(backoff_factor=N)` from `prefect.tasks` and
+  set `retry_jitter_factor=0.5`
+- **Flows:** use a pre-computed list like `[10, 20]` or `[60]` — **never** pass
+  `exponential_backoff()` to `@flow`, it returns a callable that Pydantic cannot
+  serialize (raises `PydanticSerializationError` at runtime)
+- `retry_jitter_factor` is **not supported** on `@flow` — it raises `TypeError`
+- Backoff progression: base delay doubles each retry (10 → 20 → 40 → 80 ...)
+- For long-running flows (data quality, stage cleanup), use `[60]` or `[60, 120]`
 - For short tasks (health checks, API calls), use `backoff_factor=10`
 
 ## Testing
