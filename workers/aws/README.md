@@ -229,6 +229,15 @@ Optionally delete the work pool:
 prefect work-pool delete aws-pool-backup
 ```
 
+## Health Checks
+
+Both workers run with `--with-healthcheck`, which starts a webserver on port
+8080 inside the container. Docker polls `http://127.0.0.1:8080/health` every
+30 seconds. The check treats any HTTP response (including 503 "busy") as
+healthy, but connection refused or timeout (hung process) as unhealthy. After
+3 consecutive failures Docker restarts the container automatically via
+`restart: unless-stopped`.
+
 ## Troubleshooting
 
 | Problem | Solution |
