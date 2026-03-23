@@ -75,7 +75,7 @@ def verify_and_cleanup() -> dict:
     name="analytics-revenue",
     log_prints=True,
     retries=2,
-    retry_delay_seconds=[10, 20],
+    retry_delay_seconds=10,
     on_failure=[on_flow_failure],
 )
 def analytics_revenue():

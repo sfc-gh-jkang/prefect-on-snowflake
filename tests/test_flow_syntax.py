@@ -814,34 +814,27 @@ class TestRetryPatterns:
                 )
 
     # ------------------------------------------------------------------ #
-    # Test: retry_delay_seconds must not be a bare integer
+    # Test: retry_delay_seconds must not be a callable on @flow
     # ------------------------------------------------------------------ #
     @pytest.mark.parametrize(
         "filepath", RETRY_FLOW_FILES, ids=[str(f.name) for f in RETRY_FLOW_FILES]
     )
-    def test_retry_delay_not_bare_int(self, filepath):
-        """retry_delay_seconds must never be a bare integer (e.g. 30).
-
-        Acceptable forms:
-          - @task: exponential_backoff(backoff_factor=N)  (callable)
-          - @flow: [10, 20] pre-computed list (Pydantic can't serialize callables)
-        """
+    def test_retry_delay_not_bare_int_on_tasks(self, filepath):
+        """@task retry_delay_seconds must not be a bare integer."""
         for dec in self._get_decorator_info(filepath):
-            kw = dec["keywords"]
-            if "retries" not in kw:
+            if dec["name"] != "task" or "retries" not in dec["keywords"]:
                 continue
-            delay = kw.get("retry_delay_seconds")
+            delay = dec["keywords"].get("retry_delay_seconds")
             if delay is None:
                 pytest.fail(
-                    f"{filepath.name}:{dec['lineno']} — @{dec['name']} "
+                    f"{filepath.name}:{dec['lineno']} — @task "
                     f"'{dec['func_name']}' has retries but no retry_delay_seconds"
                 )
             if isinstance(delay, ast.Constant):
                 pytest.fail(
-                    f"{filepath.name}:{dec['lineno']} — @{dec['name']} "
+                    f"{filepath.name}:{dec['lineno']} — @task "
                     f"'{dec['func_name']}' uses a fixed retry_delay_seconds="
-                    f"{delay.value}; use exponential_backoff() on tasks or "
-                    f"a pre-computed list on flows"
+                    f"{delay.value}; use exponential_backoff() instead"
                 )
 
     # ------------------------------------------------------------------ #
@@ -872,24 +865,28 @@ class TestRetryPatterns:
                 )
 
     # ------------------------------------------------------------------ #
-    # Test: @flow retries must use a List (not callable — causes
-    #       PydanticSerializationError on the server)
+    # Test: @flow retries must use an integer (not callable — causes
+    #       PydanticSerializationError; not list — causes 422 from server)
     # ------------------------------------------------------------------ #
     @pytest.mark.parametrize(
         "filepath", RETRY_FLOW_FILES, ids=[str(f.name) for f in RETRY_FLOW_FILES]
     )
-    def test_flow_retry_delay_is_list(self, filepath):
-        """@flow retry_delay_seconds must be a list, not a callable.
+    def test_flow_retry_delay_is_integer(self, filepath):
+        """@flow retry_delay_seconds must be a plain integer.
 
-        Prefect's flow engine serialises retry_delay_seconds via Pydantic
-        when updating the flow run.  Callables (like exponential_backoff())
-        cause PydanticSerializationError: Unable to serialize unknown type:
-        <class 'function'>.  Use a pre-computed list instead: [10, 20].
+        Callables (like exponential_backoff()) cause
+        PydanticSerializationError. Lists cause 422 Unprocessable Entity
+        ('Input should be a valid integer').  Only plain integers work.
         """
         for dec in self._get_decorator_info(filepath):
             if dec["name"] != "flow" or "retries" not in dec["keywords"]:
                 continue
             delay = dec["keywords"].get("retry_delay_seconds")
+            if delay is None:
+                pytest.fail(
+                    f"{filepath.name}:{dec['lineno']} — @flow "
+                    f"'{dec['func_name']}' has retries but no retry_delay_seconds"
+                )
             if isinstance(delay, ast.Call):
                 func = delay.func
                 name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "?")
@@ -897,8 +894,13 @@ class TestRetryPatterns:
                     f"{filepath.name}:{dec['lineno']} — @flow "
                     f"'{dec['func_name']}' uses retry_delay_seconds="
                     f"{name}(...) which is a callable. Prefect cannot "
-                    f"serialize callables on @flow — use a pre-computed "
-                    f"list like [10, 20] instead"
+                    f"serialize callables on @flow — use a plain integer"
+                )
+            if isinstance(delay, ast.List):
+                pytest.fail(
+                    f"{filepath.name}:{dec['lineno']} — @flow "
+                    f"'{dec['func_name']}' uses retry_delay_seconds=[...] "
+                    f"which causes 422 from Prefect server — use a plain integer"
                 )
 
     # ------------------------------------------------------------------ #
@@ -977,24 +979,34 @@ class TestRetryPatterns:
             pass
 
     # ------------------------------------------------------------------ #
-    # Test: scan ALL flow files for stale fixed-delay patterns
+    # Test: scan ALL flow files for stale callable patterns on @flow
     # ------------------------------------------------------------------ #
-    def test_no_fixed_retry_delay_anywhere(self):
-        """No flow file should use retry_delay_seconds=<integer>."""
-        # Match patterns like retry_delay_seconds=30 or retry_delay_seconds = 120
-        fixed_delay = re.compile(r"retry_delay_seconds\s*=\s*\d+")
+    def test_no_callable_retry_delay_on_flows_anywhere(self):
+        """No flow file should use exponential_backoff() on a @flow decorator."""
         violations = []
         all_flow_files = list(FLOWS_DIR.rglob("*.py"))
         for fpath in all_flow_files:
             if fpath.name == "__init__.py":
                 continue
-            source = fpath.read_text()
-            for i, line in enumerate(source.splitlines(), 1):
-                if fixed_delay.search(line) and "# noqa: retry-fixed-ok" not in line:
-                    violations.append(f"{fpath.name}:{i}: {line.strip()}")
+            for dec in self._get_decorator_info(fpath):
+                if dec["name"] != "flow" or "retries" not in dec["keywords"]:
+                    continue
+                delay = dec["keywords"].get("retry_delay_seconds")
+                if isinstance(delay, ast.Call):
+                    func = delay.func
+                    name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "?")
+                    violations.append(
+                        f"{fpath.name}:{dec['lineno']}: @flow '{dec['func_name']}' "
+                        f"uses {name}() — use a plain integer instead"
+                    )
+                if isinstance(delay, ast.List):
+                    violations.append(
+                        f"{fpath.name}:{dec['lineno']}: @flow '{dec['func_name']}' "
+                        f"uses a list — use a plain integer instead"
+                    )
         assert not violations, (
-            "Fixed retry_delay_seconds values found (use exponential_backoff):\n"
-            + "\n".join(violations)
+            "Callable/list retry_delay_seconds on @flow found "
+            "(causes PydanticSerializationError or 422):\n" + "\n".join(violations)
         )
 
 

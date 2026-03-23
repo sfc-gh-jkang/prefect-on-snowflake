@@ -134,7 +134,7 @@ def cleanup() -> None:
     name="e2e-pipeline-test",
     log_prints=True,
     retries=1,
-    retry_delay_seconds=[30],
+    retry_delay_seconds=30,
     on_failure=[on_flow_failure],
 )
 def e2e_pipeline_test(skip_cleanup: bool = False):

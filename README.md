@@ -697,7 +697,7 @@ from prefect import flow
     name="my-flow",
     log_prints=True,
     retries=2,
-    retry_delay_seconds=[10, 20],
+    retry_delay_seconds=10,
 )
 def my_flow(region: str = "us-east", dry_run: bool = False):
     print(f"Running for {region}, dry_run={dry_run}")
@@ -857,10 +857,10 @@ from prefect.tasks import exponential_backoff
 def my_task():
     ...
 
-# Flows: use a PRE-COMPUTED list — callables cause PydanticSerializationError
+# Flows: use a plain integer — callables and lists are NOT supported
 @flow(
     retries=2,
-    retry_delay_seconds=[10, 20],  # same progression as backoff_factor=10
+    retry_delay_seconds=10,
 )
 def my_flow():
     ...
@@ -868,15 +868,12 @@ def my_flow():
 
 **Rules:**
 
-- **Never** use a bare integer for `retry_delay_seconds` (e.g., `retry_delay_seconds=30`)
 - **Tasks:** use `exponential_backoff(backoff_factor=N)` from `prefect.tasks` and
-  set `retry_jitter_factor=0.5`
-- **Flows:** use a pre-computed list like `[10, 20]` or `[60]` — **never** pass
-  `exponential_backoff()` to `@flow`, it returns a callable that Pydantic cannot
-  serialize (raises `PydanticSerializationError` at runtime)
+  set `retry_jitter_factor=0.5` — tasks handle callables correctly
+- **Flows:** use a **plain integer** for `retry_delay_seconds` — callables cause
+  `PydanticSerializationError`, lists cause `422 Unprocessable Entity`
 - `retry_jitter_factor` is **not supported** on `@flow` — it raises `TypeError`
-- Backoff progression: base delay doubles each retry (10 → 20 → 40 → 80 ...)
-- For long-running flows (data quality, stage cleanup), use `[60]` or `[60, 120]`
+- For long-running flows (data quality, stage cleanup), use `retry_delay_seconds=60`
 - For short tasks (health checks, API calls), use `backoff_factor=10`
 
 ## Testing
