@@ -62,7 +62,13 @@ services:
       SNOWFLAKE_DATABASE: "${SNOWFLAKE_DATABASE:-PREFECT_DB}"
       SNOWFLAKE_SCHEMA: "${SNOWFLAKE_SCHEMA:-PREFECT_SCHEMA}"
       SNOWFLAKE_ROLE: "${SNOWFLAKE_ROLE:-ACCOUNTADMIN}"
-    command: prefect worker start --pool gcp-pool --type process
+    command: prefect worker start --pool gcp-pool --type process --with-healthcheck
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,urllib.error,sys\ntry:\n urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=5)\nexcept urllib.error.HTTPError:\n sys.exit(0)\nexcept Exception:\n sys.exit(1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     depends_on:
       auth-proxy:
         condition: service_healthy

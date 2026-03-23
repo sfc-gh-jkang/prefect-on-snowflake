@@ -75,11 +75,20 @@ docker compose -f docker-compose.gcp-backup.yaml up -d
 | `SNOWFLAKE_DATABASE` | No | Database (defaults to `PREFECT_DB`) |
 | `SNOWFLAKE_SCHEMA` | No | Schema (defaults to `PREFECT_SCHEMA`) |
 
+## Health Checks
+
+Both workers run with `--with-healthcheck`, which starts a webserver on port
+8080 inside the container. Docker polls `http://127.0.0.1:8080/health` every
+30 seconds. The check treats any HTTP response (including 503 "busy") as
+healthy, but connection refused or timeout (hung process) as unhealthy. After
+3 consecutive failures Docker restarts the container automatically via
+`restart: unless-stopped`.
+
 ## Ports
 
 | Service | Host Port | Container Port |
 |---------|-----------|----------------|
-| auth-proxy (primary) | 4200 | 4200 |
+| auth-proxy (primary) | 4201 | 4200 |
 | auth-proxy (backup) | 4202 | 4200 |
 
 ## Automated Setup
