@@ -38,8 +38,6 @@ def query_snowflake() -> list:
 @flow(
     name="snowflake-etl",
     log_prints=True,
-    retries=2,
-    retry_delay_seconds=10,
     on_failure=[on_flow_failure],
 )
 def snowflake_etl():

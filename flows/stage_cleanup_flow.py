@@ -114,8 +114,6 @@ def remove_files(stage: str, file_names: list[str]) -> int:
 @flow(
     name="stage-cleanup",
     log_prints=True,
-    retries=1,
-    retry_delay_seconds=60,
     on_failure=[on_flow_failure],
 )
 def stage_cleanup(retention_days: int = DEFAULT_RETENTION_DAYS):

@@ -112,8 +112,6 @@ def check_freshness(tbl: str, max_hours: int) -> dict:
 @flow(
     name="data-quality-check",
     log_prints=True,
-    retries=1,
-    retry_delay_seconds=60,
     on_failure=[on_flow_failure],
 )
 def data_quality_check():

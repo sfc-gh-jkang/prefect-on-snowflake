@@ -342,25 +342,26 @@ prefect-spcs/
 ├── pools.yaml                  # Work pool configuration (source of truth for 5 pools)
 ├── CONSTITUTION.md             # Governing principles (spec-kit)
 ├── SPECIFICATION.md            # Formal specification (spec-kit)
-├── flows/                      # Prefect flow code
-│   ├── example_flow.py         # Hello world
-│   ├── snowflake_flow.py       # Query Snowflake (hardcoded demo query, 3-tier auth)
-│   ├── external_api_flow.py    # External API (EAI demo, SSRF-protected allowlist)
-│   ├── e2e_test_flow.py        # End-to-end pipeline test
-│   ├── data_quality_flow.py    # Daily data quality checks on Snowflake tables
-│   ├── stage_cleanup_flow.py   # Stage file retention cleanup
-│   ├── health_check_flow.py    # Infrastructure health check (Snowflake, SPCS, pools)
+├── flows/                      # Prefect flow code (4 active deployments)
+│   ├── health_check_flow.py    # Infrastructure health check (Snowflake, SPCS, pools) — every 15m
+│   ├── stage_cleanup_flow.py   # Stage file retention cleanup — daily 3 AM
+│   ├── data_quality_flow.py    # Daily data quality checks on Snowflake tables — daily 7 AM
+│   ├── e2e_test_flow.py        # End-to-end pipeline test (used by data_quality as prerequisite)
+│   ├── example_flow.py         # Hello world (on-demand only, no schedule)
+│   ├── snowflake_flow.py       # Query Snowflake demo (on-demand only, no schedule)
+│   ├── external_api_flow.py    # External API / EAI demo (on-demand only, no schedule)
+│   ├── alert_test_flow.py      # Alert pipeline validation (on-demand only, no schedule)
 │   ├── shared_utils.py         # Root-level shared module (importable by all flows)
 │   ├── hooks.py                # Slack + webhook failure/completion notifications (opt-in)
-│   ├── deploy.py               # Offline validation (--validate) and legacy deployment
+│   ├── deploy.py               # Offline validation (--validate) and deployment
 │   └── analytics/              # Sub-package with nested flows
 │       ├── __init__.py
 │       ├── sf_helpers.py       # Shared Snowflake connection helpers (3-tier auth)
-│       ├── revenue_flow.py     # Multi-file subfolder flow (sibling imports)
+│       ├── revenue_flow.py     # Multi-file subfolder flow (on-demand only)
 │       └── reports/            # Deep nested sub-package
 │           ├── __init__.py
 │           ├── formatters.py   # Sibling helper module (format_currency, etc.)
-│           └── quarterly_flow.py  # Deep nested import stress test (3 import patterns)
+│           └── quarterly_flow.py  # Deep nested import stress test — quarterly
 ├── specs/                      # SPCS service specifications
 │   ├── pf_postgres.yaml        # Containerized Postgres (GCP only)
 │   ├── pf_redis.yaml
@@ -453,8 +454,17 @@ PREFECT_API_URL=http://localhost:4202/api \
   bash -c 'cd flows && uv run --project .. prefect deploy --all --prefect-file ../prefect.yaml'
 ```
 
-This registers all 64 deployments (10 flows × 7 pools, minus pools where certain flows are excluded) with the Prefect server. Workers
+This registers all 22 deployments (4 flows × 7 pools, minus pools where certain flows are excluded) with the Prefect server. Workers
 clone the repo at runtime via `git_clone` pull steps.
+
+**Active flows (4):**
+
+| Flow | Schedule | Pools | Purpose |
+|------|----------|-------|---------|
+| `health-check` | every 15m | spcs-pool only | SPCS service, compute pool, connectivity checks |
+| `stage-cleanup` | daily 3 AM UTC | all 7 pools | Remove stale files from Snowflake stages |
+| `data-quality` | daily 7 AM UTC | all 7 pools | Table freshness, row counts, existence checks |
+| `quarterly-report` | 1st of Jan/Apr/Jul/Oct | all 7 pools | Nested import stress test |
 
 Three options for delivering flow **code** to workers:
 
@@ -696,8 +706,6 @@ from prefect import flow
 @flow(
     name="my-flow",
     log_prints=True,
-    retries=2,
-    retry_delay_seconds=10,
 )
 def my_flow(region: str = "us-east", dry_run: bool = False):
     print(f"Running for {region}, dry_run={dry_run}")
@@ -839,10 +847,10 @@ Key requirements for nested flows:
 
 ## Retry Best Practices
 
-All flows and tasks with retries **must** avoid fixed `retry_delay_seconds`
-values. Fixed delays cause correlated retries (thundering herd) when multiple
-flow runs fail simultaneously — this contributed to a CPU spin-loop crash on the
-GCP backup worker.
+Retries should only be set on **`@task` decorators**, not on `@flow`. Flow-level
+`retries` + `retry_delay_seconds` causes a `422 Unprocessable Entity` error because
+the Prefect client serializes the delay as a list, which the server rejects.
+Individual tasks already have granular retry logic with exponential backoff.
 
 ```python
 from prefect import flow, task
@@ -852,15 +860,16 @@ from prefect.tasks import exponential_backoff
 @task(
     retries=3,
     retry_delay_seconds=exponential_backoff(backoff_factor=10),
-    retry_jitter_factor=0.5,  # task-only: adds up to 50% random jitter
+    retry_jitter_factor=0.5,  # adds up to 50% random jitter
 )
 def my_task():
     ...
 
-# Flows: use a plain integer — callables and lists are NOT supported
+# Flows: NO retries — use on_failure hook for alerting instead
 @flow(
-    retries=2,
-    retry_delay_seconds=10,
+    name="my-flow",
+    log_prints=True,
+    on_failure=[on_flow_failure],
 )
 def my_flow():
     ...
@@ -870,10 +879,9 @@ def my_flow():
 
 - **Tasks:** use `exponential_backoff(backoff_factor=N)` from `prefect.tasks` and
   set `retry_jitter_factor=0.5` — tasks handle callables correctly
-- **Flows:** use a **plain integer** for `retry_delay_seconds` — callables cause
-  `PydanticSerializationError`, lists cause `422 Unprocessable Entity`
+- **Flows:** do **not** set `retries` or `retry_delay_seconds` — the server rejects
+  the serialized `retry_delay` list with 422. Use `on_failure` hooks for alerting.
 - `retry_jitter_factor` is **not supported** on `@flow` — it raises `TypeError`
-- For long-running flows (data quality, stage cleanup), use `retry_delay_seconds=60`
 - For short tasks (health checks, API calls), use `backoff_factor=10`
 
 ## Testing
@@ -1444,7 +1452,7 @@ pools:
 
 **Backup pools** (`aws-pool-backup`, `gcp-pool-backup`) reuse the same `worker_dir` and
 `tag` as their primary counterparts but run on separate hosts for DR/failover redundancy.
-Each flow is deployed to all 5 pools (30 total deployments), so if a primary worker goes
+Each flow is deployed to all applicable pools (22 total deployments), so if a primary worker goes
 down, the backup pool's deployments continue running without reconfiguration.
 
 ### 2. Create the worker directory

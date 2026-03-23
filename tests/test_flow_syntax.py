@@ -282,13 +282,7 @@ class TestFlowSpecDataclass:
     def test_registry_has_all_expected_flows(self):
         names = {fs.name for fs in self.FLOW_REGISTRY}
         expected = {
-            "example-flow",
-            "snowflake-etl",
-            "external-api",
-            "e2e-test",
-            "analytics-revenue",
             "quarterly-report",
-            "alert-test",
             "data-quality",
             "stage-cleanup",
             "health-check",
@@ -310,46 +304,6 @@ class TestFlowSpecDataclass:
     def test_registry_entries_have_descriptions(self):
         for fs in self.FLOW_REGISTRY:
             assert fs.description, f"{fs.name}: FlowSpec should have a description"
-
-    # -- alert-test FlowSpec --
-
-    def test_alert_test_has_test_tag(self):
-        fs = next(f for f in self.FLOW_REGISTRY if f.name == "alert-test")
-        assert "test" in fs.tags
-
-    def test_alert_test_has_alerting_tag(self):
-        fs = next(f for f in self.FLOW_REGISTRY if f.name == "alert-test")
-        assert "alerting" in fs.tags
-
-    def test_alert_test_has_should_fail_parameter(self):
-        """alert-test must default to should_fail=True (fails by default to trigger alerts)."""
-        fs = next(f for f in self.FLOW_REGISTRY if f.name == "alert-test")
-        assert fs.parameters is not None
-        assert fs.parameters.get("should_fail") is True
-
-    def test_alert_test_has_no_schedule(self):
-        """alert-test must NOT have a schedule — it should only run manually."""
-        fs = next(f for f in self.FLOW_REGISTRY if f.name == "alert-test")
-        assert fs.cron is None, "alert-test should not have a cron schedule"
-        assert fs.interval is None, "alert-test should not have an interval schedule"
-        assert fs.rrule is None, "alert-test should not have an rrule schedule"
-        assert fs.schedules is None, "alert-test should not have raw schedules"
-        assert fs.build_schedules() is None, "alert-test build_schedules() must return None"
-
-    def test_alert_test_points_to_existing_file(self):
-        fs = next(f for f in self.FLOW_REGISTRY if f.name == "alert-test")
-        assert (FLOWS_DIR / fs.path).exists(), f"alert-test flow file missing: {fs.path}"
-
-    def test_alert_test_func_name(self):
-        fs = next(f for f in self.FLOW_REGISTRY if f.name == "alert-test")
-        assert fs.func == "alert_test_flow"
-
-    def test_alert_test_description_mentions_alert(self):
-        fs = next(f for f in self.FLOW_REGISTRY if f.name == "alert-test")
-        desc = fs.description.lower()
-        assert "alert" in desc or "fail" in desc, (
-            "alert-test description should mention alerting or failure"
-        )
 
 
 class TestSharedUtils:
@@ -684,7 +638,11 @@ class TestWebhookAlerting:
 
 
 class TestFlowRetries:
-    """Ensure production flows have retries and failure hooks configured."""
+    """Ensure production flows have failure hooks configured.
+
+    Flow-level retries are NOT used (causes 422 from Prefect server).
+    Retries are handled at the @task level instead.
+    """
 
     PRODUCTION_FLOWS = [
         ("snowflake_flow.py", "snowflake-etl"),
@@ -694,18 +652,6 @@ class TestFlowRetries:
         ("data_quality_flow.py", "data-quality-check"),
         ("stage_cleanup_flow.py", "stage-cleanup"),
     ]
-
-    @pytest.mark.parametrize("filename,_", PRODUCTION_FLOWS, ids=[f[0] for f in PRODUCTION_FLOWS])
-    def test_has_retries(self, filename, _):
-        source = (FLOWS_DIR / filename).read_text()
-        assert "retries=" in source, f"{filename}: @flow should have retries"
-
-    @pytest.mark.parametrize("filename,_", PRODUCTION_FLOWS, ids=[f[0] for f in PRODUCTION_FLOWS])
-    def test_has_retry_delay(self, filename, _):
-        source = (FLOWS_DIR / filename).read_text()
-        assert "retry_delay_seconds=" in source, (
-            f"{filename}: @flow should have retry_delay_seconds"
-        )
 
     @pytest.mark.parametrize("filename,_", PRODUCTION_FLOWS, ids=[f[0] for f in PRODUCTION_FLOWS])
     def test_has_failure_hook(self, filename, _):
@@ -718,14 +664,12 @@ class TestFlowRetries:
         source = (FLOWS_DIR / filename).read_text()
         assert "from hooks import" in source
 
-    def test_analytics_revenue_has_retries(self):
+    def test_analytics_revenue_has_failure_hook(self):
         source = (FLOWS_DIR / "analytics" / "revenue_flow.py").read_text()
-        assert "retries=" in source
         assert "on_failure=" in source
 
-    def test_quarterly_report_has_retries(self):
+    def test_quarterly_report_has_failure_hook(self):
         source = (FLOWS_DIR / "analytics" / "reports" / "quarterly_flow.py").read_text()
-        assert "retries=" in source
         assert "on_failure=" in source
 
 
@@ -865,42 +809,33 @@ class TestRetryPatterns:
                 )
 
     # ------------------------------------------------------------------ #
-    # Test: @flow retries must use an integer (not callable — causes
-    #       PydanticSerializationError; not list — causes 422 from server)
+    # Test: @flow must NEVER use retries (causes 422 from server due to
+    #       retry_delay serialization bug — use task-level retries instead)
     # ------------------------------------------------------------------ #
     @pytest.mark.parametrize(
         "filepath", RETRY_FLOW_FILES, ids=[str(f.name) for f in RETRY_FLOW_FILES]
     )
-    def test_flow_retry_delay_is_integer(self, filepath):
-        """@flow retry_delay_seconds must be a plain integer.
+    def test_flow_has_no_retries(self, filepath):
+        """@flow must not set retries or retry_delay_seconds.
 
-        Callables (like exponential_backoff()) cause
-        PydanticSerializationError. Lists cause 422 Unprocessable Entity
-        ('Input should be a valid integer').  Only plain integers work.
+        The Prefect client serializes retry_delay_seconds as a list,
+        which the server rejects with 422 Unprocessable Entity
+        ('Input should be a valid integer').  Use task-level retries instead.
         """
         for dec in self._get_decorator_info(filepath):
-            if dec["name"] != "flow" or "retries" not in dec["keywords"]:
+            if dec["name"] != "flow":
                 continue
-            delay = dec["keywords"].get("retry_delay_seconds")
-            if delay is None:
+            if "retries" in dec["keywords"]:
                 pytest.fail(
                     f"{filepath.name}:{dec['lineno']} — @flow "
-                    f"'{dec['func_name']}' has retries but no retry_delay_seconds"
+                    f"'{dec['func_name']}' must not set retries; "
+                    f"use task-level retries instead (causes 422 from server)"
                 )
-            if isinstance(delay, ast.Call):
-                func = delay.func
-                name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "?")
+            if "retry_delay_seconds" in dec["keywords"]:
                 pytest.fail(
                     f"{filepath.name}:{dec['lineno']} — @flow "
-                    f"'{dec['func_name']}' uses retry_delay_seconds="
-                    f"{name}(...) which is a callable. Prefect cannot "
-                    f"serialize callables on @flow — use a plain integer"
-                )
-            if isinstance(delay, ast.List):
-                pytest.fail(
-                    f"{filepath.name}:{dec['lineno']} — @flow "
-                    f"'{dec['func_name']}' uses retry_delay_seconds=[...] "
-                    f"which causes 422 from Prefect server — use a plain integer"
+                    f"'{dec['func_name']}' must not set retry_delay_seconds; "
+                    f"use task-level retries instead (causes 422 from server)"
                 )
 
     # ------------------------------------------------------------------ #

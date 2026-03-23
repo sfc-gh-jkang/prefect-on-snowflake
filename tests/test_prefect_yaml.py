@@ -34,109 +34,13 @@ def deployment_map(deployments):
 
 
 # ---------------------------------------------------------------------------
-# FLOW_REGISTRY mirror — the 6 flows that should each have 2 pool variants
+# FLOW_REGISTRY mirror — the 4 active flows deployed via prefect.yaml
 #
 # This is the single source of truth for what prefect.yaml SHOULD contain.
 # Each entry mirrors one FlowSpec from deploy.py's FLOW_REGISTRY plus the
 # actual @flow() decorator and function signature from the source file.
 # ---------------------------------------------------------------------------
 EXPECTED_FLOWS = [
-    {
-        "base_name": "example-flow",
-        "entrypoint_file": "example_flow.py",
-        "func": "example_flow",
-        "flow_name": "example-flow",
-        "tags_contain": ["example"],
-        "parameters": {"name": "Prefect-SPCS"},
-        "func_params": {"name": str},
-        "func_defaults": {"name": "World"},
-        "schedule_type": "interval",
-        "has_concurrency": False,
-    },
-    {
-        "base_name": "snowflake-etl",
-        "entrypoint_file": "snowflake_flow.py",
-        "func": "snowflake_etl",
-        "flow_name": "snowflake-etl",
-        "tags_contain": ["snowflake"],
-        "parameters": None,
-        "func_params": {},
-        "func_defaults": {},
-        "schedule_type": "cron",
-        "has_concurrency": False,
-    },
-    {
-        "base_name": "external-api",
-        "entrypoint_file": "external_api_flow.py",
-        "func": "external_api_flow",
-        "flow_name": "external-api-flow",
-        "tags_contain": ["eai"],
-        "parameters": None,
-        "func_params": {"url": str},
-        "func_defaults": {"url": "https://httpbin.org/get"},
-        "schedule_type": None,
-        "has_concurrency": False,
-    },
-    {
-        "base_name": "e2e-test",
-        "entrypoint_file": "e2e_test_flow.py",
-        "func": "e2e_pipeline_test",
-        "flow_name": "e2e-pipeline-test",
-        "tags_contain": ["e2e"],
-        "parameters": None,
-        "func_params": {},
-        "func_defaults": {},
-        "schedule_type": None,
-        "has_concurrency": True,
-    },
-    {
-        "base_name": "analytics-revenue",
-        "entrypoint_file": "analytics/revenue_flow.py",
-        "func": "analytics_revenue",
-        "flow_name": "analytics-revenue",
-        "tags_contain": ["analytics"],
-        "parameters": None,
-        "func_params": {},
-        "func_defaults": {},
-        "schedule_type": None,
-        "has_concurrency": False,
-    },
-    {
-        "base_name": "quarterly-report",
-        "entrypoint_file": "analytics/reports/quarterly_flow.py",
-        "func": "quarterly_report",
-        "flow_name": "quarterly-report",
-        "tags_contain": ["analytics", "nested"],
-        "parameters": None,
-        "func_params": {},
-        "func_defaults": {},
-        "schedule_type": "cron",
-        "has_concurrency": True,
-    },
-    {
-        "base_name": "data-quality",
-        "entrypoint_file": "data_quality_flow.py",
-        "func": "data_quality_check",
-        "flow_name": "data-quality-check",
-        "tags_contain": ["data-quality", "monitoring"],
-        "parameters": None,
-        "func_params": {},
-        "func_defaults": {},
-        "schedule_type": "cron",
-        "has_concurrency": False,
-    },
-    {
-        "base_name": "stage-cleanup",
-        "entrypoint_file": "stage_cleanup_flow.py",
-        "func": "stage_cleanup",
-        "flow_name": "stage-cleanup",
-        "tags_contain": ["maintenance", "storage"],
-        "parameters": {"retention_days": 30},
-        "func_params": {"retention_days": int},
-        "func_defaults": {"retention_days": 30},
-        "schedule_type": "cron",
-        "has_concurrency": False,
-    },
     {
         "base_name": "health-check",
         "entrypoint_file": "health_check_flow.py",
@@ -152,16 +56,40 @@ EXPECTED_FLOWS = [
         "pools": ["spcs"],
     },
     {
-        "base_name": "alert-test",
-        "entrypoint_file": "alert_test_flow.py",
-        "func": "alert_test_flow",
-        "flow_name": "alert-test",
-        "tags_contain": ["test", "alerting"],
-        "parameters": {"should_fail": True},
-        "func_params": {"should_fail": bool},
-        "func_defaults": {"should_fail": True},
-        "schedule_type": None,
+        "base_name": "stage-cleanup",
+        "entrypoint_file": "stage_cleanup_flow.py",
+        "func": "stage_cleanup",
+        "flow_name": "stage-cleanup",
+        "tags_contain": ["maintenance", "storage"],
+        "parameters": {"retention_days": 30},
+        "func_params": {"retention_days": int},
+        "func_defaults": {"retention_days": 30},
+        "schedule_type": "cron",
         "has_concurrency": False,
+    },
+    {
+        "base_name": "data-quality",
+        "entrypoint_file": "data_quality_flow.py",
+        "func": "data_quality_check",
+        "flow_name": "data-quality-check",
+        "tags_contain": ["data-quality", "monitoring"],
+        "parameters": None,
+        "func_params": {},
+        "func_defaults": {},
+        "schedule_type": "cron",
+        "has_concurrency": False,
+    },
+    {
+        "base_name": "quarterly-report",
+        "entrypoint_file": "analytics/reports/quarterly_flow.py",
+        "func": "quarterly_report",
+        "flow_name": "quarterly-report",
+        "tags_contain": ["analytics", "nested"],
+        "parameters": None,
+        "func_params": {},
+        "func_defaults": {},
+        "schedule_type": "cron",
+        "has_concurrency": True,
     },
 ]
 
@@ -372,19 +300,26 @@ class TestTags:
 # Schedules
 # ===========================================================================
 class TestSchedules:
-    def test_example_flow_has_interval(self, deployment_map):
-        for suffix in ACTIVE_POOL_SUFFIXES.values():
-            d = deployment_map[f"example-flow-{suffix}"]
-            schedules = d.get("schedules", [])
-            assert len(schedules) >= 1
-            assert schedules[0].get("interval") == 3600
+    def test_health_check_has_interval(self, deployment_map):
+        d = deployment_map["health-check-local"]
+        schedules = d.get("schedules", [])
+        assert len(schedules) >= 1
+        assert schedules[0].get("interval") == 900
 
-    def test_snowflake_etl_has_daily_cron(self, deployment_map):
+    def test_stage_cleanup_has_daily_cron(self, deployment_map):
         for suffix in ACTIVE_POOL_SUFFIXES.values():
-            d = deployment_map[f"snowflake-etl-{suffix}"]
+            d = deployment_map[f"stage-cleanup-{suffix}"]
             schedules = d.get("schedules", [])
             assert len(schedules) >= 1
-            assert schedules[0].get("cron") == "0 6 * * *"
+            assert schedules[0].get("cron") == "0 3 * * *"
+            assert schedules[0].get("timezone") == "UTC"
+
+    def test_data_quality_has_daily_cron(self, deployment_map):
+        for suffix in ACTIVE_POOL_SUFFIXES.values():
+            d = deployment_map[f"data-quality-{suffix}"]
+            schedules = d.get("schedules", [])
+            assert len(schedules) >= 1
+            assert schedules[0].get("cron") == "0 7 * * *"
             assert schedules[0].get("timezone") == "UTC"
 
     def test_quarterly_report_has_quarterly_cron(self, deployment_map):
@@ -395,27 +330,16 @@ class TestSchedules:
             assert schedules[0].get("cron") == "0 0 1 1,4,7,10 *"
             assert schedules[0].get("timezone") == "US/Pacific"
 
-    def test_external_api_has_no_schedule(self, deployment_map):
-        for suffix in ACTIVE_POOL_SUFFIXES.values():
-            d = deployment_map[f"external-api-{suffix}"]
-            assert not d.get("schedules"), f"external-api-{suffix} should have no schedule"
-
-    def test_e2e_test_has_no_schedule(self, deployment_map):
-        for suffix in ACTIVE_POOL_SUFFIXES.values():
-            d = deployment_map[f"e2e-test-{suffix}"]
-            assert not d.get("schedules"), f"e2e-test-{suffix} should have no schedule"
-
 
 # ===========================================================================
 # Concurrency limits
 # ===========================================================================
 class TestConcurrency:
-    def test_e2e_test_has_concurrency_limit(self, deployment_map):
-        for suffix in ACTIVE_POOL_SUFFIXES.values():
-            d = deployment_map[f"e2e-test-{suffix}"]
-            cl = d.get("concurrency_limit", {})
-            assert cl.get("limit") == 1
-            assert cl.get("collision_strategy") == "CANCEL_NEW"
+    def test_health_check_has_concurrency_limit(self, deployment_map):
+        d = deployment_map["health-check-local"]
+        cl = d.get("concurrency_limit", {})
+        assert cl.get("limit") == 1
+        assert cl.get("collision_strategy") == "CANCEL_NEW"
 
     def test_quarterly_report_has_concurrency_limit(self, deployment_map):
         for suffix in ACTIVE_POOL_SUFFIXES.values():
@@ -424,9 +348,9 @@ class TestConcurrency:
             assert cl.get("limit") == 1
             assert cl.get("collision_strategy") == "CANCEL_NEW"
 
-    def test_example_flow_no_concurrency_limit(self, deployment_map):
+    def test_stage_cleanup_no_concurrency_limit(self, deployment_map):
         for suffix in ACTIVE_POOL_SUFFIXES.values():
-            d = deployment_map[f"example-flow-{suffix}"]
+            d = deployment_map[f"stage-cleanup-{suffix}"]
             assert "concurrency_limit" not in d
 
 
@@ -588,16 +512,10 @@ class TestMultiFolderEntrypoints:
 
     DEPTH_MAP = {
         "root": [
-            "example_flow.py",
-            "snowflake_flow.py",
-            "external_api_flow.py",
-            "e2e_test_flow.py",
-            "data_quality_flow.py",
-            "stage_cleanup_flow.py",
             "health_check_flow.py",
-            "alert_test_flow.py",
+            "stage_cleanup_flow.py",
+            "data_quality_flow.py",
         ],
-        "subfolder": ["analytics/revenue_flow.py"],
         "deep_subfolder": ["analytics/reports/quarterly_flow.py"],
     }
 
@@ -643,17 +561,6 @@ class TestMultiFolderEntrypoints:
             file_part = d["entrypoint"].split(":")[0]
             if "/" not in file_part:
                 assert file_part in root_files, f"Unexpected root-level flow file: {file_part}"
-
-    def test_subfolder_flows_correct_depth(self, deployments):
-        """Flows in analytics/ should have exactly one directory level."""
-        subfolder_files = set(self.DEPTH_MAP["subfolder"])
-        for d in deployments:
-            file_part = d["entrypoint"].split(":")[0]
-            if file_part in subfolder_files:
-                parts = file_part.split("/")
-                assert len(parts) == 2, (
-                    f"Expected 1 subdirectory for {file_part}, got {len(parts) - 1}"
-                )
 
     def test_deep_subfolder_flows_correct_depth(self, deployments):
         """Flows in analytics/reports/ should have exactly two directory levels."""
@@ -766,19 +673,6 @@ class TestParameterPassThrough:
                     f"  Expected: {expected_params}\n"
                     f"  Actual:   {actual_params}"
                 )
-
-    def test_example_flow_overrides_default(self, deployment_map):
-        """example-flow sets name='Prefect-SPCS' which overrides the
-        function default of 'World'."""
-        parsed = _parse_flow_source("example_flow.py", "example_flow")
-        assert parsed["defaults"].get("name") == "World", (
-            "example_flow default for 'name' should be 'World'"
-        )
-        for suffix in ACTIVE_POOL_SUFFIXES.values():
-            dep = deployment_map[f"example-flow-{suffix}"]
-            assert dep["parameters"]["name"] == "Prefect-SPCS", (
-                f"example-flow-{suffix} should override name to 'Prefect-SPCS'"
-            )
 
     def test_no_extra_params_in_yaml(self, deployments):
         """No deployment should declare parameters that the flow function

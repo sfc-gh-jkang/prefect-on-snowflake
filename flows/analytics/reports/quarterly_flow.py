@@ -108,8 +108,6 @@ def verify_and_cleanup() -> dict:
 @flow(
     name="quarterly-report",
     log_prints=True,
-    retries=1,
-    retry_delay_seconds=30,
     on_failure=[on_flow_failure],
 )
 def quarterly_report():

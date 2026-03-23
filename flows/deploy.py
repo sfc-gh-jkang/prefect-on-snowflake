@@ -347,76 +347,19 @@ class FlowSpec:
 # Flow Registry — the single source of truth for all deployments.
 #
 # deploy_name gets a pool-specific suffix appended automatically:
-#   "example-flow" → "example-flow-local" (SPCS) / "example-flow-gcp" (GCP)
+#   "stage-cleanup" → "stage-cleanup-local" (SPCS) / "stage-cleanup-gcp" (GCP)
 # ---------------------------------------------------------------------------
 FLOW_REGISTRY = [
     FlowSpec(
-        path="example_flow.py",
-        func="example_flow",
-        name="example-flow",
-        tags=["example"],
-        description="Hello world flow to verify worker connectivity",
-        parameters={"name": "Prefect-SPCS"},
-        interval=3600,  # every hour
-    ),
-    FlowSpec(
-        path="snowflake_flow.py",
-        func="snowflake_etl",
-        name="snowflake-etl",
-        tags=["snowflake"],
-        description="Run a Snowflake query from the Prefect worker",
-        cron="0 6 * * *",  # daily at 6am UTC
-        timezone="UTC",
-    ),
-    FlowSpec(
-        path="external_api_flow.py",
-        func="external_api_flow",
-        name="external-api",
-        tags=["eai"],
-        description="External API call demonstrating EAI egress",
-    ),
-    FlowSpec(
-        path="e2e_test_flow.py",
-        func="e2e_pipeline_test",
-        name="e2e-test",
-        tags=["e2e"],
-        description="End-to-end pipeline: sample data -> table -> dynamic table -> verify -> cleanup",
+        path="health_check_flow.py",
+        func="health_check",
+        name="health-check",
+        tags=["monitoring", "infra"],
+        pools=["spcs"],  # SPCS-only: checks services, compute pools, stages via Snowflake SQL
+        description="SPCS service, compute pool, and connectivity health checks",
+        interval=900,  # every 15 minutes
         concurrency_limit=1,
         collision_strategy="CANCEL_NEW",
-    ),
-    FlowSpec(
-        path="analytics/revenue_flow.py",
-        func="analytics_revenue",
-        name="analytics-revenue",
-        tags=["analytics"],
-        description="Multi-file subfolder flow demonstrating sibling imports",
-    ),
-    FlowSpec(
-        path="analytics/reports/quarterly_flow.py",
-        func="quarterly_report",
-        name="quarterly-report",
-        tags=["analytics", "nested"],
-        description="Deep nested import stress test: sibling, package, and root imports",
-        concurrency_limit=1,
-        cron="0 0 1 1,4,7,10 *",  # quarterly: 1st day of Jan/Apr/Jul/Oct
-        timezone="US/Pacific",
-    ),
-    FlowSpec(
-        path="alert_test_flow.py",
-        func="alert_test_flow",
-        name="alert-test",
-        tags=["test", "alerting"],
-        description="Fails by default to validate alert pipeline end-to-end (pass should_fail=false to skip)",
-        parameters={"should_fail": True},
-    ),
-    FlowSpec(
-        path="data_quality_flow.py",
-        func="data_quality_check",
-        name="data-quality",
-        tags=["data-quality", "monitoring"],
-        description="Table freshness, row count, and existence checks",
-        cron="0 7 * * *",  # daily at 7am UTC
-        timezone="UTC",
     ),
     FlowSpec(
         path="stage_cleanup_flow.py",
@@ -429,15 +372,23 @@ FLOW_REGISTRY = [
         parameters={"retention_days": 30},
     ),
     FlowSpec(
-        path="health_check_flow.py",
-        func="health_check",
-        name="health-check",
-        tags=["monitoring", "infra"],
-        pools=["spcs"],  # SPCS-only: checks services, compute pools, stages via Snowflake SQL
-        description="SPCS service, compute pool, and connectivity health checks",
-        interval=900,  # every 15 minutes
+        path="data_quality_flow.py",
+        func="data_quality_check",
+        name="data-quality",
+        tags=["data-quality", "monitoring"],
+        description="Table freshness, row count, and existence checks",
+        cron="0 7 * * *",  # daily at 7am UTC
+        timezone="UTC",
+    ),
+    FlowSpec(
+        path="analytics/reports/quarterly_flow.py",
+        func="quarterly_report",
+        name="quarterly-report",
+        tags=["analytics", "nested"],
+        description="Deep nested import stress test: sibling, package, and root imports",
         concurrency_limit=1,
-        collision_strategy="CANCEL_NEW",
+        cron="0 0 1 1,4,7,10 *",  # quarterly: 1st day of Jan/Apr/Jul/Oct
+        timezone="US/Pacific",
     ),
 ]
 

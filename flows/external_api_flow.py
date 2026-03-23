@@ -35,8 +35,6 @@ def call_external_api(url: str) -> dict:
 @flow(
     name="external-api-flow",
     log_prints=True,
-    retries=2,
-    retry_delay_seconds=10,
     on_failure=[on_flow_failure],
 )
 def external_api_flow(url: str = "https://httpbin.org/get"):

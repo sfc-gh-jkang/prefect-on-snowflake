@@ -154,8 +154,6 @@ def check_database_objects() -> dict:
 @flow(
     name="health-check",
     log_prints=True,
-    retries=1,
-    retry_delay_seconds=10,
     on_failure=[on_flow_failure],
 )
 def health_check():
