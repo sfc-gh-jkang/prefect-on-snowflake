@@ -98,6 +98,8 @@ services:
     environment:
       WORKER_LOCATION: "${WORKER_LOCATION:-unknown}"
       WORKER_POOL: "${WORKER_POOL:-unknown}"
+      OBSERVE_COLLECTION_URL: "${OBSERVE_COLLECTION_URL:-}"
+      OBSERVE_DATASTREAM_TOKEN: "${OBSERVE_DATASTREAM_TOKEN:-}"
     depends_on:
       - auth-proxy-monitor
     restart: unless-stopped

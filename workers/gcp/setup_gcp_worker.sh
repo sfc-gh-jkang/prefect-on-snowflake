@@ -90,10 +90,31 @@ gcloud compute scp \
     "$REPO_ROOT/monitoring/vm-agents/prometheus-agent.yml" \
     "$REPO_ROOT/monitoring/vm-agents/promtail-config.yaml" \
     "$REPO_ROOT/monitoring/vm-agents/nginx-monitor.conf" \
-    "$REPO_ROOT/monitoring/vm-agents/observe-agent.yaml" \
     "$VM_NAME:/opt/prefect-gcp/vm-agents/" \
     --project="$PROJECT" \
     --zone="$ZONE"
+
+# Observe Agent config — substitute token/URL before uploading.
+# The observe-agent does NOT read env vars — credentials must be literal values in the YAML.
+OBS_TOKEN="${OBSERVE_TOKEN:-}"
+OBS_URL="${OBSERVE_COLLECTION_URL:-}"
+OBS_TMP="$(mktemp)"
+if [[ -n "$OBS_TOKEN" && -n "$OBS_URL" ]]; then
+    sed \
+      -e "s|__OBSERVE_TOKEN__|${OBS_TOKEN}|" \
+      -e "s|__OBSERVE_URL__|${OBS_URL}|" \
+      "$REPO_ROOT/monitoring/vm-agents/observe-agent.yaml" > "$OBS_TMP"
+    echo "  Observe agent config: credentials substituted."
+else
+    cp "$REPO_ROOT/monitoring/vm-agents/observe-agent.yaml" "$OBS_TMP"
+    echo "  WARNING: OBSERVE_TOKEN or OBSERVE_COLLECTION_URL not set — observe-agent will not forward traces."
+fi
+gcloud compute scp \
+    "$OBS_TMP" \
+    "$VM_NAME:/opt/prefect-gcp/vm-agents/observe-agent.yaml" \
+    --project="$PROJECT" \
+    --zone="$ZONE"
+rm -f "$OBS_TMP"
 
 # Always include monitoring overlay — .env on the VM has all needed vars.
 # docker-compose.monitoring.yml uses ${SPCS_MONITOR_ENDPOINT:?...} so it

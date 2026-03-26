@@ -1,0 +1,422 @@
+[
+  {
+    "id": "stage-login-success-fail",
+    "pipeline": "timechart options(empty_bins:true), A_USER_NAME_count:count(USER_NAME), group_by(IS_SUCCESS)",
+    "input": [
+      {
+        "datasetId": "${login_history_dataset_id}",
+        "inputName": "snowflake/LOGIN_HISTORY",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "stage",
+      "label": "Login Attempts (Success vs Failure)",
+      "steps": [
+        {
+          "action": {
+            "type": "ExpressionBuilder",
+            "params": {
+              "expressionList": {
+                "groupBys": [
+                  {
+                    "id": "IS_SUCCESS",
+                    "column": {
+                      "columnId": "IS_SUCCESS",
+                      "columnType": "STRING",
+                      "inputSource": {
+                        "stageId": "stage-login-success-fail",
+                        "datasetId": "${login_history_dataset_id}"
+                      }
+                    }
+                  }
+                ],
+                "aggregations": [
+                  {
+                    "id": "A_USER_NAME_count",
+                    "column": {
+                      "columnId": "A_USER_NAME_count",
+                      "columnType": "FLOAT",
+                      "inputSource": {
+                        "stageId": "stage-login-success-fail",
+                        "datasetId": "${login_history_dataset_id}"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "managers": [
+        {
+          "type": "VegaChart",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_USER_NAME_count"
+            ],
+            "type": "LineChart",
+            "color": "IS_SUCCESS"
+          }
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "presetView": "none",
+        "rollupDisabled": false
+      }
+    }
+  },
+  {
+    "id": "stage-login-by-user",
+    "pipeline": "timechart options(empty_bins:true), A_USER_NAME_count:count(USER_NAME), group_by(USER_NAME)",
+    "input": [
+      {
+        "datasetId": "${login_history_dataset_id}",
+        "inputName": "snowflake/LOGIN_HISTORY",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "stage",
+      "label": "Logins by User",
+      "steps": [
+        {
+          "action": {
+            "type": "ExpressionBuilder",
+            "params": {
+              "expressionList": {
+                "groupBys": [
+                  {
+                    "id": "USER_NAME",
+                    "column": {
+                      "columnId": "USER_NAME",
+                      "columnType": "STRING",
+                      "inputSource": {
+                        "stageId": "stage-login-by-user",
+                        "datasetId": "${login_history_dataset_id}"
+                      }
+                    }
+                  }
+                ],
+                "aggregations": [
+                  {
+                    "id": "A_USER_NAME_count",
+                    "column": {
+                      "columnId": "A_USER_NAME_count",
+                      "columnType": "FLOAT",
+                      "inputSource": {
+                        "stageId": "stage-login-by-user",
+                        "datasetId": "${login_history_dataset_id}"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "managers": [
+        {
+          "type": "VegaChart",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_USER_NAME_count"
+            ],
+            "type": "BarChart",
+            "color": "USER_NAME"
+          }
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "presetView": "none",
+        "rollupDisabled": false
+      }
+    }
+  },
+  {
+    "id": "stage-login-by-client",
+    "pipeline": "timechart options(empty_bins:true), A_USER_NAME_count:count(USER_NAME), group_by(REPORTED_CLIENT_TYPE)",
+    "input": [
+      {
+        "datasetId": "${login_history_dataset_id}",
+        "inputName": "snowflake/LOGIN_HISTORY",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "stage",
+      "label": "Logins by Client Type",
+      "steps": [
+        {
+          "action": {
+            "type": "ExpressionBuilder",
+            "params": {
+              "expressionList": {
+                "groupBys": [
+                  {
+                    "id": "REPORTED_CLIENT_TYPE",
+                    "column": {
+                      "columnId": "REPORTED_CLIENT_TYPE",
+                      "columnType": "STRING",
+                      "inputSource": {
+                        "stageId": "stage-login-by-client",
+                        "datasetId": "${login_history_dataset_id}"
+                      }
+                    }
+                  }
+                ],
+                "aggregations": [
+                  {
+                    "id": "A_USER_NAME_count",
+                    "column": {
+                      "columnId": "A_USER_NAME_count",
+                      "columnType": "FLOAT",
+                      "inputSource": {
+                        "stageId": "stage-login-by-client",
+                        "datasetId": "${login_history_dataset_id}"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "managers": [
+        {
+          "type": "VegaChart",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_USER_NAME_count"
+            ],
+            "type": "BarChart",
+            "color": "REPORTED_CLIENT_TYPE"
+          }
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "presetView": "none",
+        "rollupDisabled": false
+      }
+    }
+  },
+  {
+    "id": "stage-login-failures",
+    "pipeline": "filter IS_SUCCESS = \"NO\"\ntimechart options(empty_bins:true), A_USER_NAME_count:count(USER_NAME), group_by(USER_NAME)",
+    "input": [
+      {
+        "datasetId": "${login_history_dataset_id}",
+        "inputName": "snowflake/LOGIN_HISTORY",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "stage",
+      "label": "Failed Logins by User",
+      "steps": [
+        {
+          "action": {
+            "type": "ExpressionBuilder",
+            "params": {
+              "expressionList": {
+                "groupBys": [
+                  {
+                    "id": "USER_NAME",
+                    "column": {
+                      "columnId": "USER_NAME",
+                      "columnType": "STRING",
+                      "inputSource": {
+                        "stageId": "stage-login-failures",
+                        "datasetId": "${login_history_dataset_id}"
+                      }
+                    }
+                  }
+                ],
+                "aggregations": [
+                  {
+                    "id": "A_USER_NAME_count",
+                    "column": {
+                      "columnId": "A_USER_NAME_count",
+                      "columnType": "FLOAT",
+                      "inputSource": {
+                        "stageId": "stage-login-failures",
+                        "datasetId": "${login_history_dataset_id}"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "managers": [
+        {
+          "type": "VegaChart",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_USER_NAME_count"
+            ],
+            "type": "BarChart",
+            "color": "USER_NAME"
+          }
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "presetView": "none",
+        "rollupDisabled": false
+      }
+    }
+  },
+  {
+    "id": "stage-login-auth-factor",
+    "pipeline": "timechart options(empty_bins:true), A_USER_NAME_count:count(USER_NAME), group_by(FIRST_AUTHENTICATION_FACTOR)",
+    "input": [
+      {
+        "datasetId": "${login_history_dataset_id}",
+        "inputName": "snowflake/LOGIN_HISTORY",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "stage",
+      "label": "Auth Factor Distribution",
+      "steps": [
+        {
+          "action": {
+            "type": "ExpressionBuilder",
+            "params": {
+              "expressionList": {
+                "groupBys": [
+                  {
+                    "id": "FIRST_AUTHENTICATION_FACTOR",
+                    "column": {
+                      "columnId": "FIRST_AUTHENTICATION_FACTOR",
+                      "columnType": "STRING",
+                      "inputSource": {
+                        "stageId": "stage-login-auth-factor",
+                        "datasetId": "${login_history_dataset_id}"
+                      }
+                    }
+                  }
+                ],
+                "aggregations": [
+                  {
+                    "id": "A_USER_NAME_count",
+                    "column": {
+                      "columnId": "A_USER_NAME_count",
+                      "columnType": "FLOAT",
+                      "inputSource": {
+                        "stageId": "stage-login-auth-factor",
+                        "datasetId": "${login_history_dataset_id}"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "managers": [
+        {
+          "type": "VegaChart",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_USER_NAME_count"
+            ],
+            "type": "BarChart",
+            "color": "FIRST_AUTHENTICATION_FACTOR"
+          }
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "presetView": "none",
+        "rollupDisabled": false
+      }
+    }
+  },
+  {
+    "id": "stage-login-error-codes",
+    "pipeline": "filter IS_SUCCESS = \"NO\"\ntimechart options(empty_bins:true), A_USER_NAME_count:count(USER_NAME), group_by(ERROR_CODE)",
+    "input": [
+      {
+        "datasetId": "${login_history_dataset_id}",
+        "inputName": "snowflake/LOGIN_HISTORY",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "stage",
+      "label": "Login Errors by Code",
+      "steps": [
+        {
+          "action": {
+            "type": "ExpressionBuilder",
+            "params": {
+              "expressionList": {
+                "groupBys": [
+                  {
+                    "id": "ERROR_CODE",
+                    "column": {
+                      "columnId": "ERROR_CODE",
+                      "columnType": "STRING",
+                      "inputSource": {
+                        "stageId": "stage-login-error-codes",
+                        "datasetId": "${login_history_dataset_id}"
+                      }
+                    }
+                  }
+                ],
+                "aggregations": [
+                  {
+                    "id": "A_USER_NAME_count",
+                    "column": {
+                      "columnId": "A_USER_NAME_count",
+                      "columnType": "FLOAT",
+                      "inputSource": {
+                        "stageId": "stage-login-error-codes",
+                        "datasetId": "${login_history_dataset_id}"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "managers": [
+        {
+          "type": "VegaChart",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_USER_NAME_count"
+            ],
+            "type": "BarChart",
+            "color": "ERROR_CODE"
+          }
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "presetView": "none",
+        "rollupDisabled": false
+      }
+    }
+  }
+]

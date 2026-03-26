@@ -1,0 +1,394 @@
+[
+  {
+    "id": "stage-cost-by-service",
+    "pipeline": "timechart options(empty_bins:true), A_CREDITS_USED_sum:sum(CREDITS_USED)/to_minutes(bin_size()), group_by(SERVICE_TYPE)",
+    "input": [
+      {
+        "datasetId": "${metering_history_dataset_id}",
+        "inputName": "snowflake/METERING_HISTORY",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "stage",
+      "label": "Credits/Hour by Service Type",
+      "steps": [
+        {
+          "action": {
+            "type": "ExpressionBuilder",
+            "params": {
+              "expressionList": {
+                "groupBys": [
+                  {
+                    "id": "SERVICE_TYPE",
+                    "column": {
+                      "columnId": "SERVICE_TYPE",
+                      "columnType": "STRING",
+                      "inputSource": {
+                        "stageId": "stage-cost-by-service",
+                        "datasetId": "${metering_history_dataset_id}"
+                      }
+                    }
+                  }
+                ],
+                "aggregations": [
+                  {
+                    "id": "A_CREDITS_USED_sum",
+                    "column": {
+                      "columnId": "A_CREDITS_USED_sum",
+                      "columnType": "FLOAT",
+                      "inputSource": {
+                        "stageId": "stage-cost-by-service",
+                        "datasetId": "${metering_history_dataset_id}"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "managers": [
+        {
+          "type": "VegaChart",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_CREDITS_USED_sum"
+            ],
+            "type": "LineChart",
+            "color": "SERVICE_TYPE"
+          }
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "presetView": "none",
+        "rollupDisabled": false
+      }
+    }
+  },
+  {
+    "id": "stage-cost-total",
+    "pipeline": "timechart options(empty_bins:true), A_CREDITS_USED_sum:sum(CREDITS_USED)/to_minutes(bin_size())",
+    "input": [
+      {
+        "datasetId": "${metering_history_dataset_id}",
+        "inputName": "snowflake/METERING_HISTORY",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "stage",
+      "label": "Total Credits/Hour",
+      "steps": [
+        {
+          "action": {
+            "type": "ExpressionBuilder",
+            "params": {
+              "expressionList": {
+                "aggregations": [
+                  {
+                    "id": "A_CREDITS_USED_sum",
+                    "column": {
+                      "columnId": "A_CREDITS_USED_sum",
+                      "columnType": "FLOAT",
+                      "inputSource": {
+                        "stageId": "stage-cost-total",
+                        "datasetId": "${metering_history_dataset_id}"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "managers": [
+        {
+          "type": "VegaChart",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_CREDITS_USED_sum"
+            ],
+            "type": "LineChart"
+          }
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "presetView": "none",
+        "rollupDisabled": false
+      }
+    }
+  },
+  {
+    "id": "stage-cost-daily-bar",
+    "pipeline": "timechart 1d options(empty_bins:true), A_CREDITS_USED_sum:sum(CREDITS_USED), group_by(SERVICE_TYPE)",
+    "input": [
+      {
+        "datasetId": "${metering_history_dataset_id}",
+        "inputName": "snowflake/METERING_HISTORY",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "stage",
+      "label": "Daily Credits by Service Type",
+      "steps": [
+        {
+          "action": {
+            "type": "ExpressionBuilder",
+            "params": {
+              "expressionList": {
+                "groupBys": [
+                  {
+                    "id": "SERVICE_TYPE",
+                    "column": {
+                      "columnId": "SERVICE_TYPE",
+                      "columnType": "STRING",
+                      "inputSource": {
+                        "stageId": "stage-cost-daily-bar",
+                        "datasetId": "${metering_history_dataset_id}"
+                      }
+                    }
+                  }
+                ],
+                "aggregations": [
+                  {
+                    "id": "A_CREDITS_USED_sum",
+                    "column": {
+                      "columnId": "A_CREDITS_USED_sum",
+                      "columnType": "FLOAT",
+                      "inputSource": {
+                        "stageId": "stage-cost-daily-bar",
+                        "datasetId": "${metering_history_dataset_id}"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "managers": [
+        {
+          "type": "VegaChart",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_CREDITS_USED_sum"
+            ],
+            "type": "BarChart",
+            "color": "SERVICE_TYPE"
+          }
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "presetView": "none",
+        "rollupDisabled": false
+      }
+    }
+  },
+  {
+    "id": "stage-cost-compute-vs-cloud",
+    "pipeline": "timechart options(empty_bins:true), A_CREDITS_USED_COMPUTE_sum:sum(CREDITS_USED_COMPUTE), A_CREDITS_USED_CLOUD_SERVICES_sum:sum(CREDITS_USED_CLOUD_SERVICES)",
+    "input": [
+      {
+        "datasetId": "${metering_history_dataset_id}",
+        "inputName": "snowflake/METERING_HISTORY",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "stage",
+      "label": "Compute vs Cloud Services Credits",
+      "steps": [
+        {
+          "action": {
+            "type": "ExpressionBuilder",
+            "params": {
+              "expressionList": {
+                "aggregations": [
+                  {
+                    "id": "A_CREDITS_USED_COMPUTE_sum",
+                    "column": {
+                      "columnId": "A_CREDITS_USED_COMPUTE_sum",
+                      "columnType": "FLOAT",
+                      "inputSource": {
+                        "stageId": "stage-cost-compute-vs-cloud",
+                        "datasetId": "${metering_history_dataset_id}"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "managers": [
+        {
+          "type": "VegaChart",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_CREDITS_USED_COMPUTE_sum"
+            ],
+            "type": "LineChart"
+          }
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "presetView": "none",
+        "rollupDisabled": false
+      }
+    }
+  },
+  {
+    "id": "stage-task-runs",
+    "pipeline": "timechart options(empty_bins:true), A_NAME_count:count(NAME), group_by(STATE)",
+    "input": [
+      {
+        "datasetId": "${task_history_dataset_id}",
+        "inputName": "snowflake/TASK_HISTORY",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "stage",
+      "label": "Task Runs by State",
+      "steps": [
+        {
+          "action": {
+            "type": "ExpressionBuilder",
+            "params": {
+              "expressionList": {
+                "groupBys": [
+                  {
+                    "id": "STATE",
+                    "column": {
+                      "columnId": "STATE",
+                      "columnType": "STRING",
+                      "inputSource": {
+                        "stageId": "stage-task-runs",
+                        "datasetId": "${task_history_dataset_id}"
+                      }
+                    }
+                  }
+                ],
+                "aggregations": [
+                  {
+                    "id": "A_NAME_count",
+                    "column": {
+                      "columnId": "A_NAME_count",
+                      "columnType": "FLOAT",
+                      "inputSource": {
+                        "stageId": "stage-task-runs",
+                        "datasetId": "${task_history_dataset_id}"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "managers": [
+        {
+          "type": "VegaChart",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_NAME_count"
+            ],
+            "type": "BarChart",
+            "color": "STATE"
+          }
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "presetView": "none",
+        "rollupDisabled": false
+      }
+    }
+  },
+  {
+    "id": "stage-task-errors",
+    "pipeline": "filter STATE = \"FAILED\"\ntimechart options(empty_bins:true), A_NAME_count:count(NAME), group_by(NAME)",
+    "input": [
+      {
+        "datasetId": "${task_history_dataset_id}",
+        "inputName": "snowflake/TASK_HISTORY",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "stage",
+      "label": "Failed Tasks by Name",
+      "steps": [
+        {
+          "action": {
+            "type": "ExpressionBuilder",
+            "params": {
+              "expressionList": {
+                "groupBys": [
+                  {
+                    "id": "NAME",
+                    "column": {
+                      "columnId": "NAME",
+                      "columnType": "STRING",
+                      "inputSource": {
+                        "stageId": "stage-task-errors",
+                        "datasetId": "${task_history_dataset_id}"
+                      }
+                    }
+                  }
+                ],
+                "aggregations": [
+                  {
+                    "id": "A_NAME_count",
+                    "column": {
+                      "columnId": "A_NAME_count",
+                      "columnType": "FLOAT",
+                      "inputSource": {
+                        "stageId": "stage-task-errors",
+                        "datasetId": "${task_history_dataset_id}"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "managers": [
+        {
+          "type": "VegaChart",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_NAME_count"
+            ],
+            "type": "BarChart",
+            "color": "NAME"
+          }
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "presetView": "none",
+        "rollupDisabled": false
+      }
+    }
+  }
+]

@@ -128,3 +128,26 @@ scrape_configs:
 # Remote write receiver — accepts metrics from VM Prometheus agents.
 # VM agents push to http://pf-monitor.<dns>:9090/api/v1/write
 # Enabled via --web.enable-remote-write-receiver flag.
+
+# Remote write TO Observe — dual-write all scraped metrics.
+# This sends every Prometheus metric (Prefect, Redis, Postgres, Loki, Grafana,
+# prefect-exporter, VM agent forwarded metrics) to Observe, filling all the
+# Grafana dashboard gaps in Observe (container CPU/memory, flow runs, etc.).
+#
+# Token and URL are baked in at deploy time by deploy_monitoring.sh.
+# Without valid credentials, Prometheus logs remote_write errors but still
+# functions normally for local Grafana queries.
+remote_write:
+  - url: "__OBSERVE_COLLECTION_URL__/v1/prometheus"
+    authorization:
+      credentials: "__OBSERVE_DATASTREAM_TOKEN__"
+    queue_config:
+      capacity: 10000
+      max_shards: 5
+      max_samples_per_send: 2000
+      batch_send_deadline: 10s
+    write_relabel_configs:
+      # Drop high-cardinality metrics to reduce ingest volume
+      - source_labels: [__name__]
+        regex: "go_.*|promhttp_.*|prometheus_sd_.*"
+        action: drop

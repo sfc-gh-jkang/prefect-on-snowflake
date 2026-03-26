@@ -65,13 +65,15 @@ CREATE SERVICE IF NOT EXISTS PF_SERVICES
     MAX_INSTANCES = 1;
 
 -- 6. Prefect Worker (worker pool — flow execution)
+--    PREFECT_MONITOR_EAI provides access to Observe's collect endpoint for
+--    direct OTLP trace export (cross-service OTLP does not work in SPCS).
 CREATE SERVICE IF NOT EXISTS PF_WORKER
     IN COMPUTE POOL PREFECT_WORKER_POOL
     FROM @PREFECT_SPECS
     SPECIFICATION_FILE = 'pf_worker.yaml'
     MIN_INSTANCES = 1
     MAX_INSTANCES = 3
-    EXTERNAL_ACCESS_INTEGRATIONS = (PREFECT_WORKER_EAI);
+    EXTERNAL_ACCESS_INTEGRATIONS = (PREFECT_WORKER_EAI, PREFECT_MONITOR_EAI);
 
 -- 7. Deploy flows (one-shot job — registers deployments with server)
 CALL SYSTEM$WAIT_FOR_SERVICES(120, 'PREFECT_DB.PREFECT_SCHEMA.PF_SERVICES', 'PREFECT_DB.PREFECT_SCHEMA.PF_WORKER');

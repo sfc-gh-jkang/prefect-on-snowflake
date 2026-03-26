@@ -69,15 +69,25 @@ if [[ "$SLACK_ENABLED" == "true" ]]; then
     SLACK_RULE_ENTRIES="'hooks.slack.com:443', 'api.slack.com:443', "
 fi
 
+# Observe collect endpoint — required for observe-agent to forward OTLP traces.
+# Extract customer ID from OBSERVE_TOKEN (format: "<customer_id> <api_token>")
+# or OBSERVE_COLLECTION_URL (format: "https://<customer_id>.collect.observeinc.com")
+OBSERVE_COLLECT_ENTRY=""
+OBSERVE_COLLECTION_URL="${OBSERVE_COLLECTION_URL:-}"
+if [[ -n "$OBSERVE_COLLECTION_URL" ]]; then
+    OBSERVE_HOST=$(echo "$OBSERVE_COLLECTION_URL" | sed 's|https://||;s|/.*||')
+    OBSERVE_COLLECT_ENTRY=", '${OBSERVE_HOST}:443'"
+fi
+
 snow sql -q "
   CREATE OR REPLACE NETWORK RULE ${DB}.${SCHEMA}.MONITOR_EGRESS_RULE
     MODE = EGRESS
     TYPE = HOST_PORT
     VALUE_LIST = (
       ${SLACK_RULE_ENTRIES}'discord.com:443',
-      'smtp.gmail.com:587'${PG_RULE_ENTRY}
+      'smtp.gmail.com:587'${PG_RULE_ENTRY}${OBSERVE_COLLECT_ENTRY}
     )
-    COMMENT = 'Grafana alerting egress — Slack (opt-in), Discord, email (STARTTLS 587) + Postgres';
+    COMMENT = 'Grafana alerting egress — Slack (opt-in), Discord, email (STARTTLS 587) + Postgres + Observe collect';
 " --connection "$CONNECTION" || true
 
 echo "[3/7] Creating External Access Integration for monitoring ..."
@@ -105,10 +115,28 @@ snow sql -q "
 # --- Upload config files to stage ---------------------------------------------
 echo "[5/7] Uploading monitoring configs to stage ..."
 
-# Prometheus
-snow stage copy "$PROJECT_DIR/monitoring/prometheus/prometheus.yml" \
-  "@${DB}.${SCHEMA}.${STAGE}/prometheus/" \
-  --connection "$CONNECTION" --overwrite
+# Prometheus — substitute Observe remote_write credentials if set.
+# This enables dual-write of ALL Prometheus metrics to Observe, filling
+# Grafana dashboard gaps (flow runs, container CPU/memory, Postgres, Redis).
+PROM_SRC="$PROJECT_DIR/monitoring/prometheus/prometheus.yml"
+if [[ -n "${OBSERVE_COLLECTION_URL:-}" && -n "${OBSERVE_DATASTREAM_TOKEN:-}" ]]; then
+    PROM_TMP="$(mktemp)"
+    sed \
+      -e "s|__OBSERVE_COLLECTION_URL__|${OBSERVE_COLLECTION_URL}|g" \
+      -e "s|__OBSERVE_DATASTREAM_TOKEN__|${OBSERVE_DATASTREAM_TOKEN}|g" \
+      "$PROM_SRC" > "$PROM_TMP"
+    snow stage copy "$PROM_TMP" \
+      "@${DB}.${SCHEMA}.${STAGE}/prometheus/prometheus.yml" \
+      --connection "$CONNECTION" --overwrite
+    rm -f "$PROM_TMP"
+    echo "  Uploaded prometheus.yml with Observe remote_write credentials."
+else
+    snow stage copy "$PROM_SRC" \
+      "@${DB}.${SCHEMA}.${STAGE}/prometheus/" \
+      --connection "$CONNECTION" --overwrite
+    echo "  WARNING: OBSERVE_COLLECTION_URL or OBSERVE_DATASTREAM_TOKEN not set."
+    echo "  Prometheus remote_write to Observe is disabled (placeholders not substituted)."
+fi
 
 snow stage copy "$PROJECT_DIR/monitoring/prometheus/rules/alerts.yml" \
   "@${DB}.${SCHEMA}.${STAGE}/prometheus/rules/" \
@@ -156,17 +184,52 @@ snow stage copy "$PROJECT_DIR/monitoring/loki/rules/fake/alerts.yaml" \
   "@${DB}.${SCHEMA}.${STAGE}/loki/rules/fake/" \
   --connection "$CONNECTION" --overwrite
 
+# Observe Agent config — substitute token/URL from env, then upload.
+# IMPORTANT: The observe-agent does NOT read environment variables for auth.
+# The token and observe_url MUST be literal values in the YAML config file.
+# Without this step, the observe-agent container starts but can't authenticate
+# to Observe, and no OTLP traces are forwarded (Tracing/Span dataset stays empty).
+OBS_TOKEN="${OBSERVE_TOKEN:-}"
+OBS_URL="${OBSERVE_COLLECTION_URL:-}"
+if [[ -n "$OBS_TOKEN" && -n "$OBS_URL" ]]; then
+    OBS_SRC="$PROJECT_DIR/monitoring/spcs-agents/observe-agent-spcs.yaml"
+    OBS_TMP="$(mktemp)"
+    sed \
+      -e "s|__OBSERVE_TOKEN__|${OBS_TOKEN}|" \
+      -e "s|__OBSERVE_URL__|${OBS_URL}|" \
+      "$OBS_SRC" > "$OBS_TMP"
+    snow stage copy "$OBS_TMP" \
+      "@${DB}.${SCHEMA}.${STAGE}/observe-agent/observe-agent.yaml" \
+      --connection "$CONNECTION" --overwrite
+    rm -f "$OBS_TMP"
+    echo "  Uploaded observe-agent config with credentials."
+else
+    echo "  WARNING: OBSERVE_TOKEN or OBSERVE_COLLECTION_URL not set in .env"
+    echo "  Observe agent will start but cannot forward traces to Observe."
+    echo "  Set these in .env and re-run to enable APM trace collection."
+fi
+
 # SPCS spec file — substitute SMTP config from env, then upload.
 # The repo spec uses CHANGE_ME@example.com placeholders; we replace them
 # with real values from .env so secrets never leak into version control.
+# Also substitutes Observe log dual-write placeholders for the event-log-poller.
 SMTP_USER="${GRAFANA_SMTP_USER:-CHANGE_ME@example.com}"
 SMTP_RECIPIENTS="${GRAFANA_SMTP_RECIPIENTS:-${GRAFANA_SMTP_USER:-CHANGE_ME@example.com}}"
 SPEC_SRC="$PROJECT_DIR/monitoring/specs/pf_monitor.yaml"
 SPEC_TMP="$(mktemp)"
+
+# Build Observe LOKI URL: <collection_url>/v1/http (poller appends /loki/api/v1/push)
+OBSERVE_LOKI_URL_VALUE=""
+if [[ -n "${OBSERVE_COLLECTION_URL:-}" ]]; then
+    OBSERVE_LOKI_URL_VALUE="${OBSERVE_COLLECTION_URL}/v1/http"
+fi
+
 sed \
   -e "s|GF_SMTP_USER: \"CHANGE_ME@example.com\"|GF_SMTP_USER: \"${SMTP_USER}\"|" \
   -e "s|GF_SMTP_FROM_ADDRESS: \"CHANGE_ME@example.com\"|GF_SMTP_FROM_ADDRESS: \"${SMTP_USER}\"|" \
   -e "s|GF_SMTP_ALERT_RECIPIENTS: \"CHANGE_ME@example.com\"|GF_SMTP_ALERT_RECIPIENTS: \"${SMTP_RECIPIENTS}\"|" \
+  -e "s|__OBSERVE_LOKI_URL__|${OBSERVE_LOKI_URL_VALUE}|g" \
+  -e "s|__OBSERVE_DATASTREAM_TOKEN__|${OBSERVE_DATASTREAM_TOKEN:-}|g" \
   "$SPEC_SRC" > "$SPEC_TMP"
 snow stage copy "$SPEC_TMP" \
   "@${DB}.${SCHEMA}.${STAGE}/specs/pf_monitor.yaml" \

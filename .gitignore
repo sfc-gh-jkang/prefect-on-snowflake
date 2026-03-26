@@ -31,6 +31,14 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
+# Terraform
+*.tfplan
+tfplan
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+
 # Secrets (never commit)
 sql/03_setup_secrets.sql
 *.pem

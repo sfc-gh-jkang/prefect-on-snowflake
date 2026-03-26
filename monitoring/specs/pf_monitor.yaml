@@ -185,7 +185,7 @@ spec:
     # them to the co-located Loki instance via HTTP push API.
     # Uses SPCS OAuth token at /snowflake/session/token for Snowflake auth.
     - name: event-log-poller
-      image: /prefect_db/prefect_schema/prefect_repository/event-log-poller:v10
+      image: /prefect_db/prefect_schema/prefect_repository/event-log-poller:v11
       resources:
         requests:
           cpu: 0.1
@@ -201,6 +201,10 @@ spec:
         SNOWFLAKE_WAREHOUSE: "COMPUTE_WH"
         SNOWFLAKE_DATABASE: "PREFECT_DB"
         SPCS_SERVICES: "PF_SERVER,PF_WORKER,PF_REDIS,PF_SERVICES,PF_MONITOR"
+        # Observe dual-write — placeholders substituted by deploy_monitoring.sh.
+        # If not substituted, poller skips Observe push (empty string = disabled).
+        OBSERVE_LOKI_URL: "__OBSERVE_LOKI_URL__"
+        OBSERVE_DATASTREAM_TOKEN: "__OBSERVE_DATASTREAM_TOKEN__"
 
     # ── Prometheus Backup — periodic TSDB snapshot to stage ──────────────
     # Creates TSDB snapshots every 6h and uploads to @MONITOR_STAGE/backups/prometheus/.
@@ -267,8 +271,8 @@ spec:
         - name: observe-config
           mountPath: /etc/observe-agent
       readinessProbe:
-        port: 4317
-        path: /
+        port: 13133
+        path: /status
 
   endpoints:
     # Grafana UI — public
@@ -283,9 +287,15 @@ spec:
     - name: loki
       port: 3100
       public: true
-    # OTLP gRPC — internal only (SPCS services send traces here)
+    # OTLP gRPC — public so other SPCS services (PF_WORKER) can send traces
     - name: otlp
       port: 4317
+      public: true
+    # OTLP HTTP — public for cross-service trace collection via http/protobuf
+    # (SPCS ingress is HTTP-based; gRPC may not work through it)
+    - name: otlphttp
+      port: 4318
+      public: true
 
   volumes:
     # Prometheus config — mounted from stage (v2 syntax)

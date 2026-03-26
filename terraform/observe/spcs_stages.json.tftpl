@@ -1,0 +1,474 @@
+[
+  {
+    "id": "stage-spcs-credits-pool",
+    "pipeline": "timechart options(empty_bins:true), A_CREDITS_USED_sum:sum(CREDITS_USED)/to_minutes(bin_size()), group_by(COMPUTE_POOL_NAME)",
+    "input": [
+      {
+        "datasetId": "${spcs_dataset_id}",
+        "inputName": "snowflake/SNOWPARK_CONTAINER_SERVICES_HISTORY",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "table",
+      "label": "Credits/Hour by Compute Pool",
+      "steps": [
+        {
+          "id": "step-in-stage-spcs-credits-pool",
+          "opal": [],
+          "type": "InputStep",
+          "index": 0,
+          "isPinned": false,
+          "customName": "Input",
+          "customSummary": ""
+        },
+        {
+          "id": "step-ex-stage-spcs-credits-pool",
+          "opal": [
+            "timechart options(empty_bins:true), A_CREDITS_USED_sum:sum(CREDITS_USED)/to_minutes(bin_size()), group_by(COMPUTE_POOL_NAME)"
+          ],
+          "type": "unknown",
+          "index": 1,
+          "action": {
+            "type": "ExpressionBuilder",
+            "params": {
+              "expressionList": {
+                "expressions": [
+                  {
+                    "id": "expr-stage-spcs-credits-pool",
+                    "type": "datasetQueryExpression",
+                    "field": "CREDITS_USED",
+                    "dataVis": {
+                      "x": "_c_valid_from",
+                      "y": [
+                        "A_CREDITS_USED_sum"
+                      ],
+                      "type": "LineChart",
+                      "legend": {
+                        "visible": true
+                      },
+                      "lineConfig": {
+                        "areaFillType": "TranslucentFill"
+                      }
+                    },
+                    "groupBy": [
+                      "COMPUTE_POOL_NAME"
+                    ],
+                    "viewTab": "visualize",
+                    "inputSource": {
+                      "datasetId": "${spcs_dataset_id}"
+                    },
+                    "summaryMode": "over-time",
+                    "filterActions": [],
+                    "lookupActions": [],
+                    "valueColumnId": "A_CREDITS_USED_sum",
+                    "summaryFunction": "sum",
+                    "expressionIdentifier": "A"
+                  }
+                ],
+                "aggregationMode": "aggregate",
+                "shouldLimitPatterns": true,
+                "selectedExpressionIds": [
+                  "expr-stage-spcs-credits-pool"
+                ]
+              }
+            }
+          },
+          "isPinned": false,
+          "customSummary": "Expression Builder"
+        }
+      ],
+      "managers": [
+        {
+          "id": "vis-stage-spcs-credits-pool",
+          "type": "Vis",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_CREDITS_USED_sum"
+            ],
+            "type": "LineChart",
+            "legend": {
+              "type": "list",
+              "visible": true
+            },
+            "xConfig": {
+              "valueFormat": {
+                "notation": "compact"
+              }
+            },
+            "yConfig": {
+              "show": true,
+              "valueFormat": {
+                "options": {
+                  "notation": "compact"
+                }
+              }
+            },
+            "lineConfig": {
+              "areaFillType": "TranslucentFill"
+            }
+          },
+          "isDisabled": false
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "showTimeRuler": true
+      }
+    }
+  },
+  {
+    "id": "stage-spcs-credits-total",
+    "pipeline": "timechart options(empty_bins:true), A_CREDITS_USED_sum:sum(CREDITS_USED)/to_minutes(bin_size()), group_by()",
+    "input": [
+      {
+        "datasetId": "${spcs_dataset_id}",
+        "inputName": "snowflake/SNOWPARK_CONTAINER_SERVICES_HISTORY",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "table",
+      "label": "Total Credits/Hour (All Pools)",
+      "steps": [
+        {
+          "id": "step-in-stage-spcs-credits-total",
+          "opal": [],
+          "type": "InputStep",
+          "index": 0,
+          "isPinned": false,
+          "customName": "Input",
+          "customSummary": ""
+        },
+        {
+          "id": "step-ex-stage-spcs-credits-total",
+          "opal": [
+            "timechart options(empty_bins:true), A_CREDITS_USED_sum:sum(CREDITS_USED)/to_minutes(bin_size()), group_by()"
+          ],
+          "type": "unknown",
+          "index": 1,
+          "action": {
+            "type": "ExpressionBuilder",
+            "params": {
+              "expressionList": {
+                "expressions": [
+                  {
+                    "id": "expr-stage-spcs-credits-total",
+                    "type": "datasetQueryExpression",
+                    "field": "CREDITS_USED",
+                    "dataVis": {
+                      "x": "_c_valid_from",
+                      "y": [
+                        "A_CREDITS_USED_sum"
+                      ],
+                      "type": "LineChart",
+                      "legend": {
+                        "visible": true
+                      },
+                      "lineConfig": {
+                        "areaFillType": "TranslucentFill"
+                      }
+                    },
+                    "groupBy": [],
+                    "viewTab": "visualize",
+                    "inputSource": {
+                      "datasetId": "${spcs_dataset_id}"
+                    },
+                    "summaryMode": "over-time",
+                    "filterActions": [],
+                    "lookupActions": [],
+                    "valueColumnId": "A_CREDITS_USED_sum",
+                    "summaryFunction": "sum",
+                    "expressionIdentifier": "A"
+                  }
+                ],
+                "aggregationMode": "aggregate",
+                "shouldLimitPatterns": true,
+                "selectedExpressionIds": [
+                  "expr-stage-spcs-credits-total"
+                ]
+              }
+            }
+          },
+          "isPinned": false,
+          "customSummary": "Expression Builder"
+        }
+      ],
+      "managers": [
+        {
+          "id": "vis-stage-spcs-credits-total",
+          "type": "Vis",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_CREDITS_USED_sum"
+            ],
+            "type": "LineChart",
+            "legend": {
+              "type": "list",
+              "visible": true
+            },
+            "xConfig": {
+              "valueFormat": {
+                "notation": "compact"
+              }
+            },
+            "yConfig": {
+              "show": true,
+              "valueFormat": {
+                "options": {
+                  "notation": "compact"
+                }
+              }
+            },
+            "lineConfig": {
+              "areaFillType": "TranslucentFill"
+            }
+          },
+          "isDisabled": false
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "showTimeRuler": true
+      }
+    }
+  },
+  {
+    "id": "stage-spcs-daily-bar",
+    "pipeline": "timechart options(empty_bins:true), 1d, A_CREDITS_USED_sum:sum(CREDITS_USED), group_by(COMPUTE_POOL_NAME)",
+    "input": [
+      {
+        "datasetId": "${spcs_dataset_id}",
+        "inputName": "snowflake/SNOWPARK_CONTAINER_SERVICES_HISTORY",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "table",
+      "label": "Daily Credit Totals by Compute Pool",
+      "steps": [
+        {
+          "id": "step-in-stage-spcs-daily-bar",
+          "opal": [],
+          "type": "InputStep",
+          "index": 0,
+          "isPinned": false,
+          "customName": "Input",
+          "customSummary": ""
+        },
+        {
+          "id": "step-ex-stage-spcs-daily-bar",
+          "opal": [
+            "timechart options(empty_bins:true), 1d, A_CREDITS_USED_sum:sum(CREDITS_USED), group_by(COMPUTE_POOL_NAME)"
+          ],
+          "type": "unknown",
+          "index": 1,
+          "action": {
+            "type": "ExpressionBuilder",
+            "params": {
+              "expressionList": {
+                "expressions": [
+                  {
+                    "id": "expr-stage-spcs-daily-bar",
+                    "type": "datasetQueryExpression",
+                    "field": "CREDITS_USED",
+                    "dataVis": {
+                      "x": "_c_valid_from",
+                      "y": [
+                        "A_CREDITS_USED_sum"
+                      ],
+                      "type": "BarChart",
+                      "legend": {
+                        "visible": true
+                      },
+                      "lineConfig": {
+                        "areaFillType": "TranslucentFill"
+                      }
+                    },
+                    "groupBy": [
+                      "COMPUTE_POOL_NAME"
+                    ],
+                    "viewTab": "visualize",
+                    "inputSource": {
+                      "datasetId": "${spcs_dataset_id}"
+                    },
+                    "summaryMode": "over-time",
+                    "filterActions": [],
+                    "lookupActions": [],
+                    "valueColumnId": "A_CREDITS_USED_sum",
+                    "summaryFunction": "sum",
+                    "expressionIdentifier": "A"
+                  }
+                ],
+                "aggregationMode": "aggregate",
+                "shouldLimitPatterns": true,
+                "selectedExpressionIds": [
+                  "expr-stage-spcs-daily-bar"
+                ]
+              }
+            }
+          },
+          "isPinned": false,
+          "customSummary": "Expression Builder"
+        }
+      ],
+      "managers": [
+        {
+          "id": "vis-stage-spcs-daily-bar",
+          "type": "Vis",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_CREDITS_USED_sum"
+            ],
+            "type": "BarChart",
+            "legend": {
+              "type": "list",
+              "visible": true
+            },
+            "xConfig": {
+              "valueFormat": {
+                "notation": "compact"
+              }
+            },
+            "yConfig": {
+              "show": true,
+              "valueFormat": {
+                "options": {
+                  "notation": "compact"
+                }
+              }
+            },
+            "lineConfig": {
+              "areaFillType": "TranslucentFill"
+            }
+          },
+          "isDisabled": false
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "showTimeRuler": true
+      }
+    }
+  },
+  {
+    "id": "stage-spcs-daily-total",
+    "pipeline": "timechart options(empty_bins:true), 1d, A_CREDITS_USED_sum:sum(CREDITS_USED), group_by()",
+    "input": [
+      {
+        "datasetId": "${spcs_dataset_id}",
+        "inputName": "snowflake/SNOWPARK_CONTAINER_SERVICES_HISTORY",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "table",
+      "label": "Daily Credit Totals (All Pools)",
+      "steps": [
+        {
+          "id": "step-in-stage-spcs-daily-total",
+          "opal": [],
+          "type": "InputStep",
+          "index": 0,
+          "isPinned": false,
+          "customName": "Input",
+          "customSummary": ""
+        },
+        {
+          "id": "step-ex-stage-spcs-daily-total",
+          "opal": [
+            "timechart options(empty_bins:true), 1d, A_CREDITS_USED_sum:sum(CREDITS_USED), group_by()"
+          ],
+          "type": "unknown",
+          "index": 1,
+          "action": {
+            "type": "ExpressionBuilder",
+            "params": {
+              "expressionList": {
+                "expressions": [
+                  {
+                    "id": "expr-stage-spcs-daily-total",
+                    "type": "datasetQueryExpression",
+                    "field": "CREDITS_USED",
+                    "dataVis": {
+                      "x": "_c_valid_from",
+                      "y": [
+                        "A_CREDITS_USED_sum"
+                      ],
+                      "type": "BarChart",
+                      "legend": {
+                        "visible": true
+                      },
+                      "lineConfig": {
+                        "areaFillType": "TranslucentFill"
+                      }
+                    },
+                    "groupBy": [],
+                    "viewTab": "visualize",
+                    "inputSource": {
+                      "datasetId": "${spcs_dataset_id}"
+                    },
+                    "summaryMode": "over-time",
+                    "filterActions": [],
+                    "lookupActions": [],
+                    "valueColumnId": "A_CREDITS_USED_sum",
+                    "summaryFunction": "sum",
+                    "expressionIdentifier": "A"
+                  }
+                ],
+                "aggregationMode": "aggregate",
+                "shouldLimitPatterns": true,
+                "selectedExpressionIds": [
+                  "expr-stage-spcs-daily-total"
+                ]
+              }
+            }
+          },
+          "isPinned": false,
+          "customSummary": "Expression Builder"
+        }
+      ],
+      "managers": [
+        {
+          "id": "vis-stage-spcs-daily-total",
+          "type": "Vis",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_CREDITS_USED_sum"
+            ],
+            "type": "BarChart",
+            "legend": {
+              "type": "list",
+              "visible": true
+            },
+            "xConfig": {
+              "valueFormat": {
+                "notation": "compact"
+              }
+            },
+            "yConfig": {
+              "show": true,
+              "valueFormat": {
+                "options": {
+                  "notation": "compact"
+                }
+              }
+            },
+            "lineConfig": {
+              "areaFillType": "TranslucentFill"
+            }
+          },
+          "isDisabled": false
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "showTimeRuler": true
+      }
+    }
+  }
+]

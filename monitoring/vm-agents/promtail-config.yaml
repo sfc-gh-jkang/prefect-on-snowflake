@@ -1,5 +1,6 @@
 # Promtail config for VM workers — ships Docker container logs to Loki on SPCS.
 # Loki push goes through the auth-proxy-monitor sidecar for PAT auth.
+# Optionally dual-writes to Observe via a second client entry (Loki-compatible endpoint).
 
 server:
   http_listen_port: 9080
@@ -12,6 +13,14 @@ positions:
 clients:
   # Push to SPCS Loki via the auth-proxy-monitor sidecar
   - url: "http://auth-proxy-monitor:4220/loki/api/v1/push"
+    external_labels:
+      worker_location: "${WORKER_LOCATION}"
+      worker_pool: "${WORKER_POOL}"
+  # Dual-write to Observe (Loki-compatible endpoint).
+  # Uses env var expansion (-config.expand-env=true in compose).
+  # If OBSERVE_COLLECTION_URL is empty, promtail skips this client (invalid URL = no-op).
+  - url: "${OBSERVE_COLLECTION_URL}/v1/http/loki/api/v1/push"
+    bearer_token: "${OBSERVE_DATASTREAM_TOKEN}"
     external_labels:
       worker_location: "${WORKER_LOCATION}"
       worker_pool: "${WORKER_POOL}"

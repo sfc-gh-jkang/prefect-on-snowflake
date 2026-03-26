@@ -6,7 +6,10 @@
 -- =============================================================================
 USE ROLE ACCOUNTADMIN;
 
--- Network rule: allow worker to reach external APIs
+-- Network rule: allow worker to reach external APIs + Observe OTLP endpoint
+-- NOTE: The Observe collect endpoint is needed for direct-to-Observe OTLP export.
+-- SPCS cross-service public endpoints require Snowflake auth headers that the
+-- OTel SDK cannot provide, so workers export traces directly to Observe.
 CREATE NETWORK RULE IF NOT EXISTS PREFECT_DB.PREFECT_SCHEMA.PREFECT_WORKER_EGRESS_RULE
     MODE = EGRESS
     TYPE = HOST_PORT
@@ -49,3 +52,15 @@ GRANT USAGE ON INTEGRATION PREFECT_DASHBOARD_EAI TO ROLE PREFECT_ROLE;
 -- setup (see monitoring/o4s/ docs). Here we just grant usage to PREFECT_ROLE
 -- so PF_MONITOR can reference OBSERVE_INGEST_ACCESS_INTEGRATION.
 GRANT USAGE ON INTEGRATION OBSERVE_INGEST_ACCESS_INTEGRATION TO ROLE PREFECT_ROLE;
+
+-- ---------------------------------------------------------------------------
+-- Worker OTLP egress — PF_WORKER exports traces directly to Observe
+-- ---------------------------------------------------------------------------
+-- SPCS cross-service OTLP (worker → observe-agent) does NOT work because
+-- public endpoint ingress requires Snowflake auth headers that the OTel SDK
+-- cannot inject.  Instead, PF_WORKER exports directly to Observe's collect
+-- endpoint via PREFECT_MONITOR_EAI (which includes the Observe collect host
+-- in MONITOR_EGRESS_RULE).
+-- The ALTER SERVICE in 07b_update_services.sql adds PREFECT_MONITOR_EAI to
+-- PF_WORKER's EXTERNAL_ACCESS_INTEGRATIONS list.
+-- See README "APM Trace Collection (SPCS → Observe)" for the full story.

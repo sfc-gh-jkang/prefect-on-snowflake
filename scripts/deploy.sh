@@ -98,6 +98,18 @@ upload_specs() {
           "$tmp_dir/$spec_file"
       fi
     done
+
+    # Substitute Observe OTLP placeholders in pf_worker.yaml.
+    # Direct-to-Observe export requires a datastream token (ds1xxxxx:yyyyyy)
+    # and the collection URL. See README "APM Trace Collection" for details.
+    local obs_ds_token="${OBSERVE_DATASTREAM_TOKEN:-}"
+    local obs_collect_url="${OBSERVE_COLLECTION_URL:-}"
+    if [[ -n "$obs_ds_token" && -n "$obs_collect_url" && -f "$tmp_dir/pf_worker.yaml" ]]; then
+        sed -i.bak \
+          -e "s|__OBSERVE_DATASTREAM_TOKEN__|${obs_ds_token}|" \
+          -e "s|__OBSERVE_COLLECTION_URL__|${obs_collect_url}|" \
+          "$tmp_dir/pf_worker.yaml"
+    fi
     rm -f "$tmp_dir"/*.bak
 
     snow stage copy "$tmp_dir/" @PREFECT_DB.PREFECT_SCHEMA.PREFECT_SPECS/ \

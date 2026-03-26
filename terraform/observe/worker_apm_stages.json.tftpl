@@ -1,0 +1,50 @@
+[
+  {
+    "id": "stage-apm-latency",
+    "pipeline": "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name), duration_ms:float64(int64(FIELDS.span.end_time_unix_nano)-int64(FIELDS.span.start_time_unix_nano))/1000000.0\nfilter int64(FIELDS.span.kind) = 2 or int64(FIELDS.span.kind) = 3\ntimechart options(empty_bins:true), A_avg_duration:avg(duration_ms), group_by(span_name)",
+    "input": [
+      {
+        "datasetId": "${otel_raw_dataset_id}",
+        "inputName": "OTel Raw",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": "{\"type\":\"table\",\"label\":\"Avg Span Duration by Operation (ms)\",\"steps\":[{\"id\":\"si-stage-apm-latency\",\"opal\":[],\"type\":\"InputStep\",\"index\":0,\"isPinned\":false,\"customName\":\"Input\",\"customSummary\":\"\"},{\"id\":\"se-stage-apm-latency\",\"opal\":[\"filter OBSERVATION_KIND = \\\"otelspan\\\"\\nmake_col span_name:string(FIELDS.span.name), duration_ms:float64(int64(FIELDS.span.end_time_unix_nano)-int64(FIELDS.span.start_time_unix_nano))/1000000.0\\nfilter int64(FIELDS.span.kind) = 2 or int64(FIELDS.span.kind) = 3\\ntimechart options(empty_bins:true), A_avg_duration:avg(duration_ms), group_by(span_name)\"],\"type\":\"unknown\",\"index\":1,\"action\":{\"type\":\"ExpressionBuilder\",\"params\":{\"expressionList\":{\"expressions\":[{\"id\":\"e-stage-apm-latency\",\"type\":\"datasetQueryExpression\",\"field\":\"OBSERVATION_KIND\",\"dataVis\":{\"x\":\"_c_valid_from\",\"y\":[\"A_avg_duration\"],\"type\":\"LineChart\",\"legend\":{\"visible\":true},\"lineConfig\":{\"areaFillType\":\"TranslucentFill\"}},\"groupBy\":[\"OBSERVATION_KIND\"],\"viewTab\":\"visualize\",\"inputSource\":{\"datasetId\":\"${otel_raw_dataset_id}\"},\"summaryMode\":\"over-time\",\"filterActions\":[],\"lookupActions\":[],\"valueColumnId\":\"A_avg_duration\",\"summaryFunction\":\"count\",\"expressionIdentifier\":\"A\"}],\"aggregationMode\":\"aggregate\",\"shouldLimitPatterns\":true,\"selectedExpressionIds\":[\"e-stage-apm-latency\"]}}},\"isPinned\":false,\"customSummary\":\"Expression Builder\"}],\"managers\":[{\"id\":\"v-stage-apm-latency\",\"type\":\"Vis\",\"vegaVis\":{\"x\":\"_c_valid_from\",\"y\":[\"A_avg_duration\"],\"type\":\"LineChart\",\"legend\":{\"type\":\"list\",\"visible\":true},\"xConfig\":{\"valueFormat\":{\"notation\":\"compact\"}},\"yConfig\":{\"show\":true,\"valueFormat\":{\"options\":{\"notation\":\"compact\"}}},\"lineConfig\":{\"areaFillType\":\"TranslucentFill\"}},\"isDisabled\":false}],\"viewModel\":{\"stageTab\":\"vis\",\"showTimeRuler\":true}}"
+  },
+  {
+    "id": "stage-apm-throughput",
+    "pipeline": "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name)\ntimechart options(empty_bins:true), A_span_count:count(1), group_by(span_name)",
+    "input": [
+      {
+        "datasetId": "${otel_raw_dataset_id}",
+        "inputName": "OTel Raw",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": "{\"type\":\"table\",\"label\":\"Span Throughput by Operation\",\"steps\":[{\"id\":\"si-stage-apm-throughput\",\"opal\":[],\"type\":\"InputStep\",\"index\":0,\"isPinned\":false,\"customName\":\"Input\",\"customSummary\":\"\"},{\"id\":\"se-stage-apm-throughput\",\"opal\":[\"filter OBSERVATION_KIND = \\\"otelspan\\\"\\nmake_col span_name:string(FIELDS.span.name)\\ntimechart options(empty_bins:true), A_span_count:count(1), group_by(span_name)\"],\"type\":\"unknown\",\"index\":1,\"action\":{\"type\":\"ExpressionBuilder\",\"params\":{\"expressionList\":{\"expressions\":[{\"id\":\"e-stage-apm-throughput\",\"type\":\"datasetQueryExpression\",\"field\":\"OBSERVATION_KIND\",\"dataVis\":{\"x\":\"_c_valid_from\",\"y\":[\"A_span_count\"],\"type\":\"LineChart\",\"legend\":{\"visible\":true},\"lineConfig\":{\"areaFillType\":\"TranslucentFill\"}},\"groupBy\":[\"OBSERVATION_KIND\"],\"viewTab\":\"visualize\",\"inputSource\":{\"datasetId\":\"${otel_raw_dataset_id}\"},\"summaryMode\":\"over-time\",\"filterActions\":[],\"lookupActions\":[],\"valueColumnId\":\"A_span_count\",\"summaryFunction\":\"count\",\"expressionIdentifier\":\"A\"}],\"aggregationMode\":\"aggregate\",\"shouldLimitPatterns\":true,\"selectedExpressionIds\":[\"e-stage-apm-throughput\"]}}},\"isPinned\":false,\"customSummary\":\"Expression Builder\"}],\"managers\":[{\"id\":\"v-stage-apm-throughput\",\"type\":\"Vis\",\"vegaVis\":{\"x\":\"_c_valid_from\",\"y\":[\"A_span_count\"],\"type\":\"LineChart\",\"legend\":{\"type\":\"list\",\"visible\":true},\"xConfig\":{\"valueFormat\":{\"notation\":\"compact\"}},\"yConfig\":{\"show\":true,\"valueFormat\":{\"options\":{\"notation\":\"compact\"}}},\"lineConfig\":{\"areaFillType\":\"TranslucentFill\"}},\"isDisabled\":false}],\"viewModel\":{\"stageTab\":\"vis\",\"showTimeRuler\":true}}"
+  },
+  {
+    "id": "stage-apm-errors",
+    "pipeline": "filter OBSERVATION_KIND = \"otelspan\"\nmake_col status_code:case(int64(FIELDS.span.status.code) = 0 or isnull(int64(FIELDS.span.status.code)), \"UNSET\", int64(FIELDS.span.status.code) = 1, \"OK\", int64(FIELDS.span.status.code) = 2, \"ERROR\", \"UNKNOWN\")\ntimechart options(empty_bins:true), A_span_count:count(1), group_by(status_code)",
+    "input": [
+      {
+        "datasetId": "${otel_raw_dataset_id}",
+        "inputName": "OTel Raw",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": "{\"type\":\"table\",\"label\":\"Spans by Status Code\",\"steps\":[{\"id\":\"si-stage-apm-errors\",\"opal\":[],\"type\":\"InputStep\",\"index\":0,\"isPinned\":false,\"customName\":\"Input\",\"customSummary\":\"\"},{\"id\":\"se-stage-apm-errors\",\"opal\":[\"filter OBSERVATION_KIND = \\\"otelspan\\\"\\nmake_col status_code:case(int64(FIELDS.span.status.code) = 0 or isnull(int64(FIELDS.span.status.code)), \\\"UNSET\\\", int64(FIELDS.span.status.code) = 1, \\\"OK\\\", int64(FIELDS.span.status.code) = 2, \\\"ERROR\\\", \\\"UNKNOWN\\\")\\ntimechart options(empty_bins:true), A_span_count:count(1), group_by(status_code)\"],\"type\":\"unknown\",\"index\":1,\"action\":{\"type\":\"ExpressionBuilder\",\"params\":{\"expressionList\":{\"expressions\":[{\"id\":\"e-stage-apm-errors\",\"type\":\"datasetQueryExpression\",\"field\":\"OBSERVATION_KIND\",\"dataVis\":{\"x\":\"_c_valid_from\",\"y\":[\"A_span_count\"],\"type\":\"BarChart\",\"legend\":{\"visible\":true},\"lineConfig\":{\"areaFillType\":\"TranslucentFill\"}},\"groupBy\":[\"OBSERVATION_KIND\"],\"viewTab\":\"visualize\",\"inputSource\":{\"datasetId\":\"${otel_raw_dataset_id}\"},\"summaryMode\":\"over-time\",\"filterActions\":[],\"lookupActions\":[],\"valueColumnId\":\"A_span_count\",\"summaryFunction\":\"count\",\"expressionIdentifier\":\"A\"}],\"aggregationMode\":\"aggregate\",\"shouldLimitPatterns\":true,\"selectedExpressionIds\":[\"e-stage-apm-errors\"]}}},\"isPinned\":false,\"customSummary\":\"Expression Builder\"}],\"managers\":[{\"id\":\"v-stage-apm-errors\",\"type\":\"Vis\",\"vegaVis\":{\"x\":\"_c_valid_from\",\"y\":[\"A_span_count\"],\"type\":\"BarChart\",\"legend\":{\"type\":\"list\",\"visible\":true},\"xConfig\":{\"valueFormat\":{\"notation\":\"compact\"}},\"yConfig\":{\"show\":true,\"valueFormat\":{\"options\":{\"notation\":\"compact\"}}},\"lineConfig\":{\"areaFillType\":\"TranslucentFill\"}},\"isDisabled\":false}],\"viewModel\":{\"stageTab\":\"vis\",\"showTimeRuler\":true}}"
+  },
+  {
+    "id": "stage-apm-top-spans",
+    "pipeline": "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name), duration_ms:float64(int64(FIELDS.span.end_time_unix_nano)-int64(FIELDS.span.start_time_unix_nano))/1000000.0\nfilter int64(FIELDS.span.kind) = 2 or int64(FIELDS.span.kind) = 3\ntimechart options(empty_bins:true), A_p95_duration:percentile(duration_ms, 95), group_by(span_name)",
+    "input": [
+      {
+        "datasetId": "${otel_raw_dataset_id}",
+        "inputName": "OTel Raw",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": "{\"type\":\"table\",\"label\":\"P95 Latency by Operation (ms)\",\"steps\":[{\"id\":\"si-stage-apm-top-spans\",\"opal\":[],\"type\":\"InputStep\",\"index\":0,\"isPinned\":false,\"customName\":\"Input\",\"customSummary\":\"\"},{\"id\":\"se-stage-apm-top-spans\",\"opal\":[\"filter OBSERVATION_KIND = \\\"otelspan\\\"\\nmake_col span_name:string(FIELDS.span.name), duration_ms:float64(int64(FIELDS.span.end_time_unix_nano)-int64(FIELDS.span.start_time_unix_nano))/1000000.0\\nfilter int64(FIELDS.span.kind) = 2 or int64(FIELDS.span.kind) = 3\\ntimechart options(empty_bins:true), A_p95_duration:percentile(duration_ms, 95), group_by(span_name)\"],\"type\":\"unknown\",\"index\":1,\"action\":{\"type\":\"ExpressionBuilder\",\"params\":{\"expressionList\":{\"expressions\":[{\"id\":\"e-stage-apm-top-spans\",\"type\":\"datasetQueryExpression\",\"field\":\"OBSERVATION_KIND\",\"dataVis\":{\"x\":\"_c_valid_from\",\"y\":[\"A_p95_duration\"],\"type\":\"LineChart\",\"legend\":{\"visible\":true},\"lineConfig\":{\"areaFillType\":\"TranslucentFill\"}},\"groupBy\":[\"OBSERVATION_KIND\"],\"viewTab\":\"visualize\",\"inputSource\":{\"datasetId\":\"${otel_raw_dataset_id}\"},\"summaryMode\":\"over-time\",\"filterActions\":[],\"lookupActions\":[],\"valueColumnId\":\"A_p95_duration\",\"summaryFunction\":\"count\",\"expressionIdentifier\":\"A\"}],\"aggregationMode\":\"aggregate\",\"shouldLimitPatterns\":true,\"selectedExpressionIds\":[\"e-stage-apm-top-spans\"]}}},\"isPinned\":false,\"customSummary\":\"Expression Builder\"}],\"managers\":[{\"id\":\"v-stage-apm-top-spans\",\"type\":\"Vis\",\"vegaVis\":{\"x\":\"_c_valid_from\",\"y\":[\"A_p95_duration\"],\"type\":\"LineChart\",\"legend\":{\"type\":\"list\",\"visible\":true},\"xConfig\":{\"valueFormat\":{\"notation\":\"compact\"}},\"yConfig\":{\"show\":true,\"valueFormat\":{\"options\":{\"notation\":\"compact\"}}},\"lineConfig\":{\"areaFillType\":\"TranslucentFill\"}},\"isDisabled\":false}],\"viewModel\":{\"stageTab\":\"vis\",\"showTimeRuler\":true}}"
+  }
+]

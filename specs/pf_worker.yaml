@@ -6,8 +6,8 @@ spec:
       # ALTER SERVICE ... FROM @PREFECT_SPECS SPECIFICATION_FILE = 'pf_worker.yaml';
       image: /prefect_db/prefect_schema/prefect_repository/prefect-worker:latest
       command:
-        - opentelemetry-instrument
-        - prefect
+        - /opt/prefect/.venv/bin/opentelemetry-instrument
+        - /opt/prefect/.venv/bin/prefect
         - worker
         - start
         - --pool
@@ -29,10 +29,21 @@ spec:
         GIT_BRANCH: "main"
         PREFECT_WORKER_WEBSERVER_HOST: "0.0.0.0"
         PREFECT_WORKER_WEBSERVER_PORT: "8080"
-        # OTel auto-instrumentation — traces sent to observe-agent in PF_MONITOR
+        # OTel auto-instrumentation — export traces directly to Observe collect endpoint.
+        # Uses HTTP/protobuf OTLP with datastream token auth.  The observe-agent sidecar
+        # is kept for host/self monitoring but traces bypass it to avoid localhost
+        # gRPC/HTTP connectivity issues inside SPCS pods.
+        #
+        # Placeholders are substituted by deploy.sh (upload_specs) from .env:
+        #   __OBSERVE_COLLECTION_URL__ → OBSERVE_COLLECTION_URL
+        #   __OBSERVE_DATASTREAM_TOKEN__ → OBSERVE_DATASTREAM_TOKEN
         OTEL_SERVICE_NAME: "prefect-worker-spcs"
-        OTEL_EXPORTER_OTLP_ENDPOINT: "http://pf-monitor:4317"
-        OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+        OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "__OBSERVE_COLLECTION_URL__/v1/otel/v1/traces"
+        OTEL_EXPORTER_OTLP_TRACES_HEADERS: "authorization=Bearer __OBSERVE_DATASTREAM_TOKEN__"
+        OTEL_TRACES_EXPORTER: "otlp"
+        OTEL_METRICS_EXPORTER: "none"
+        OTEL_LOGS_EXPORTER: "none"
         OTEL_RESOURCE_ATTRIBUTES: "deployment.environment.name=spcs,service.namespace=prefect"
         OTEL_TRACES_SAMPLER: "parentbased_always_on"
       secrets:
@@ -46,6 +57,28 @@ spec:
       readinessProbe:
         port: 8080
         path: /health
+
+    # ── Observe Agent sidecar — OTLP relay for APM traces ──────────────
+    # Accepts OTLP traces from the co-located pf-worker via localhost:4318.
+    # Forwards traces to Observe's collect endpoint using MONITOR_EGRESS_EAI.
+    # Config is mounted from @MONITOR_STAGE/observe-agent/ with token/URL
+    # baked in at deploy time by monitoring/deploy_monitoring.sh.
+    - name: observe-agent
+      image: /prefect_db/prefect_schema/prefect_repository/observe-agent:2.0.0
+      resources:
+        requests:
+          cpu: 0.1
+          memory: 128M
+        limits:
+          cpu: 0.2
+          memory: 256M
+      volumeMounts:
+        - name: observe-config
+          mountPath: /etc/observe-agent
+      readinessProbe:
+        port: 13133
+        path: /status
+
   endpoints:
     - name: health
       port: 8080
@@ -58,6 +91,13 @@ spec:
       source: stage
       stageConfig:
         name: "@PREFECT_DB.PREFECT_SCHEMA.PREFECT_FLOWS"
+      uid: 0
+      gid: 0
+    # Observe Agent config — mounted from stage (token/URL baked in at deploy time)
+    - name: observe-config
+      source: stage
+      stageConfig:
+        name: "@PREFECT_DB.PREFECT_SCHEMA.MONITOR_STAGE/observe-agent"
       uid: 0
       gid: 0
   platformMonitor:

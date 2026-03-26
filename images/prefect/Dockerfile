@@ -12,8 +12,15 @@ COPY pyproject.toml .
 COPY src/ src/
 RUN uv sync --no-dev
 
-# Install OTel auto-instrumentation packages for all installed libraries
-RUN uv run opentelemetry-bootstrap -a install
+# OTel: uv sync resolves deps but doesn't always generate console-script
+# entry points (opentelemetry-instrument).  Re-install via uv pip to force
+# entry-point generation, then use uv pip for bootstrap (it shells out to
+# pip internally, which uv venvs don't have).
+RUN uv pip install --python .venv/bin/python \
+        opentelemetry-distro \
+        opentelemetry-exporter-otlp
+RUN OTEL_PKGS=$(uv run opentelemetry-bootstrap --action=requirements 2>/dev/null) && \
+    if [ -n "$OTEL_PKGS" ]; then echo "$OTEL_PKGS" | uv pip install --python .venv/bin/python -r -; fi
 
 # uv venv is the runtime environment
 ENV PATH="/opt/prefect/.venv/bin:$PATH"

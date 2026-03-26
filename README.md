@@ -30,7 +30,15 @@ Production-grade, self-hosted Prefect orchestration server running entirely on S
             | spcs-pool     |  | gcp-pool    |  | aws-pool    |
             | git_clone +   |  | git_clone   |  | git_clone   |
             | stage fallback|  +-------------+  +-------------+
-            +---------------+
+            +-------+-------+
+                    │ OTLP/HTTP (direct, datastream token)
+                    ▼
+            ┌───────────────┐
+            │ Observe        │
+            │ Tracing/Span   │
+            │ collect.       │
+            │ observeinc.com │
+            └───────────────┘
 ```
 
 **5–6 SPCS services** (6 on GCP with containerized Postgres) + **Snowflake Managed Postgres** (AWS/Azure) across **3–4 compute pools**, with hybrid workers on GCP, AWS, and Azure.
@@ -61,6 +69,7 @@ graph TB
             PG_EXP["Postgres Exporter"]
             PROM_BK["Prom Backup"]
             LOKI_BK["Loki Backup"]
+            OBS_AGENT["Observe Agent<br/>OTLP relay"]
         end
         subgraph DASH["PREFECT_DASHBOARD_POOL"]
             SIS["Streamlit Dashboard<br/>7-page ops console"]
@@ -86,6 +95,7 @@ graph TB
     POLLER -->|"event table"| LOKI
     PROM_BK -->|"@MONITOR_STAGE"| PROM
     LOKI_BK -->|"@MONITOR_STAGE"| LOKI
+    WORKER -->|"OTLP direct<br/>(datastream token)"| OBSERVE["Observe<br/>Tracing/Span"]
     GRAFANA --> PROM
     GRAFANA --> LOKI
     SIS -->|"PAT UDF"| SERVER
@@ -213,6 +223,7 @@ snow sql -f sql/06_setup_image_repo.sql --connection <conn>
 
 **Monitoring gotchas:**
 
+- **SPCS cross-service OTLP does NOT work:** Public endpoints in SPCS require Snowflake auth headers (`Authorization: Snowflake Token="<PAT>"`). The Python OTel SDK cannot inject these headers, so PF_WORKER cannot export traces to the observe-agent sidecar in PF_MONITOR via its public endpoint. The fix is direct-to-Observe export using a datastream token and EAI egress. See [APM Trace Collection](#apm-trace-collection-spcs-workers--observe) for setup.
 - **postgres-exporter PG17 compatibility:** PG17 moved checkpoint columns from `pg_stat_bgwriter` to `pg_stat_checkpointer`. postgres-exporter < v0.17.0 queries the removed columns and floods logs with `ERROR: column "checkpoints_timed" does not exist`. Use v0.17.0+ (v0.19.1 recommended).
 - **Grafana legacy vs unified alerting:** Grafana 11+ removed legacy alerting. Having both `GF_ALERTING_ENABLED=true` and `GF_UNIFIED_ALERTING_ENABLED=true` causes startup conflicts. Set `GF_ALERTING_ENABLED=false` explicitly.
 - **Loki alertmanager_url disabled:** Grafana's unified alerting Alertmanager API returns `400 Bad Request` for Loki-generated alerts. Set `alertmanager_url: ""` in `loki-config.yaml`. Loki's ruler still evaluates rules locally; Grafana queries alert state via the ruler API (`/loki/api/v1/rules`).
@@ -221,6 +232,7 @@ snow sql -f sql/06_setup_image_repo.sql --connection <conn>
 - **OCSP warnings in SPCS containers:** Snowflake Python connector tries OCSP certificate revocation checks but SPCS containers cannot reach external OCSP responders (e.g. `ocsp.digicert.com`). This floods logs with OCSP warnings. Fix: set `insecure_mode=True` on the connector — the connection is internal to Snowflake infra so OCSP is unnecessary.
 - **cAdvisor NaN metrics on VM agents:** cAdvisor reports metrics for all cgroups, but host-level cgroups (systemd services, slices, root `/`) without resource limits produce NaN values that Prometheus rejects as "out of order sample". Fix: run cAdvisor with `--docker_only=true --disable_root_cgroup_stats=true` so it only reports Docker container metrics. This is configured in `docker-compose.monitoring.yml`.
 - **`snow stage copy` path gotcha:** `snow stage copy file.yaml "@STAGE/specs/file.yaml"` creates a *directory* named `file.yaml` with the file inside it (nested path). Use `"@STAGE/specs/"` (trailing slash, no filename) so the file lands at `specs/file.yaml`. This matters for `ALTER SERVICE ... SPECIFICATION_FILE` which reads a fixed path.
+- **Observe agent credentials not in env vars:** The observe-agent (`observeinc/observe-agent`) does **NOT** read `OBSERVE_TOKEN` or `OBSERVE_URL` from environment variables. The `token` and `observe_url` fields must be **literal values** in the YAML config file (`observe-agent.yaml`). The repo template files use `__OBSERVE_TOKEN__` and `__OBSERVE_URL__` placeholders — these must be substituted at deploy time by the setup scripts (`deploy_monitoring.sh` for SPCS, `setup_gcp_worker.sh` for GCP, `setup_aws_worker.sh` for AWS). Without substitution, the agent starts but silently fails to authenticate, and the Observe Tracing/Span dataset stays empty. **Three things must all be true** for APM traces to flow: (1) `OBSERVE_TOKEN` and `OBSERVE_COLLECTION_URL` set in `.env`, (2) the deploy/setup script substitutes placeholders into the config, (3) the SPCS network rule (`MONITOR_EGRESS_RULE`) includes `<customer_id>.collect.observeinc.com:443` in its `VALUE_LIST`.
 
 **Observability stack upgrade path:**
 
@@ -403,6 +415,7 @@ prefect-spcs/
 │   ├── 07_create_services_gcp.sql # GCP variant (containerized Postgres)
 │   ├── 07b_update_services.sql # ALTER SERVICE for rolling upgrades
 │   ├── 08_validate.sql
+│   ├── 08b_setup_o4s.sql       # Observe for Snowflake (O4S) native app setup
 │   ├── 09_suspend_all.sql
 │   └── 10_resume_all.sql
 ├── scripts/                    # Automation scripts
@@ -429,7 +442,7 @@ prefect-spcs/
 │   ├── teardown_monitoring.sh  # Remove monitoring service
 │   ├── docker-compose.monitoring.yml  # VM monitoring sidecars
 │   ├── specs/
-│   │   └── pf_monitor.yaml     # 8-container SPCS service (Prometheus, Grafana, Loki, postgres-exporter, prefect-exporter, event-log-poller, prom-backup, loki-backup)
+│   │   └── pf_monitor.yaml     # 9-container SPCS service (Prometheus, Grafana, Loki, postgres-exporter, prefect-exporter, event-log-poller, prom-backup, loki-backup, observe-agent)
 │   ├── prometheus/
 │   │   ├── prometheus.yml      # Scrape config for all Prefect services
 │   │   └── rules/alerts.yml    # 7 alert rules
@@ -441,6 +454,7 @@ prefect-spcs/
 │   └── vm-agents/              # Sidecar configs for hybrid worker VMs
 │       ├── prometheus-agent.yml    # Metrics push via remote_write
 │       ├── promtail-config.yaml    # Log forwarding to Loki
+│       ├── observe-agent.yaml      # Observe OTLP relay (placeholders — substituted at deploy)
 │       └── nginx-monitor.conf      # Monitoring proxy
 ├── workers/                    # External hybrid workers
 │   ├── gcp/                    # GCP worker
@@ -463,6 +477,15 @@ prefect-spcs/
 │   ├── postgres/               # postgres:16 wrapper (GCP only — AWS/Azure use Managed Postgres)
 │   ├── redis/                  # redis:7 wrapper
 │   └── spcs-log-poller/        # Polls SPCS system logs into Loki
+├── terraform/                  # Infrastructure as Code
+│   └── observe/                # Observe dashboards + monitors (Terraform)
+│       ├── versions.tf         # Provider config (observeinc/observe ~> 0.14)
+│       ├── variables.tf        # Customer ID, API token, thresholds
+│       ├── terraform.tfvars.example  # Credentials template
+│       ├── data.tf             # Dataset references (O4S + OTel)
+│       ├── dashboards.tf       # 5 dashboards (SPCS, APM, warehouse, cost, login)
+│       ├── monitors.tf         # 4 monitors (credit spike, long query, heartbeat, idle cost)
+│       └── outputs.tf          # Dashboard URLs + monitor names
 └── tests/                      # Test suite (2300+ offline tests)
 ```
 
@@ -1095,6 +1118,15 @@ The `monitoring/` directory provides a full Prometheus + Grafana + Loki observab
 running as a single 6-container SPCS service (`PF_MONITOR`) on `PREFECT_MONITOR_POOL`
 (`CPU_X64_S` — 2 vCPU, with explicit CPU limits totaling 1.95/2.0).
 
+Prometheus also dual-writes all scraped metrics to **Observe** via `remote_write`, so the
+same metrics powering Grafana dashboards are available in Observe for long-term retention
+and cross-correlation with O4S Snowflake datasets and OTel traces. See
+[Prometheus Metrics → Observe](#prometheus-metrics--observe-remote_write) for setup.
+
+Logs are also dual-written to Observe: the SPCS log poller and VM promtail agents push to
+both local Loki and Observe's Loki-compatible endpoint. See
+[Logs → Observe](#logs--observe-loki-compatible-push) for details.
+
 ```
 ┌───────────────────────────────────────────────────────────────────┐
 │  PF_MONITOR (SPCS)                                                │
@@ -1122,14 +1154,14 @@ running as a single 6-container SPCS service (`PF_MONITOR`) on `PREFECT_MONITOR_
 
 | Component | Purpose | Config |
 |-----------|---------|--------|
-| Prometheus | Scrapes all Prefect services via SPCS internal DNS (8 scrape jobs) | `prometheus/prometheus.yml` |
+| Prometheus | Scrapes all Prefect services via SPCS internal DNS (8 scrape jobs), dual-writes to Observe via `remote_write` | `prometheus/prometheus.yml` |
 | Grafana | 9 dashboards with anonymous access (SPCS strips auth headers), Health home dashboard | `grafana/dashboards/`, `grafana/provisioning/` |
 | Loki | Log aggregation — 168h retention, receives logs from VM agents and SPCS log poller | `loki/loki-config.yaml` |
 | postgres-exporter | Exposes PostgreSQL metrics from the managed Postgres instance | `monitoring/specs/pf_monitor.yaml` |
 | Prefect Exporter | Custom sidecar — polls Prefect REST API, exposes flow runs / deployments / work pool metrics on `:9394` | `images/prefect-exporter/` |
-| SPCS Log Poller | Custom sidecar — queries `SPCS_EVENT_LOGS` wrapper view via OAuth, pushes to Loki | `images/spcs-log-poller/` |
+| SPCS Log Poller | Custom sidecar — queries `SPCS_EVENT_LOGS` wrapper view via OAuth, pushes to Loki and dual-writes to Observe | `images/spcs-log-poller/` |
 | Alert rules | 7 rules across 3 groups (service down, high error rate, pool saturation, etc.) | `prometheus/rules/alerts.yml` |
-| VM agents | Prometheus-agent + Promtail sidecars for hybrid workers | `vm-agents/` |
+| VM agents | Prometheus-agent + Promtail sidecars for hybrid workers, Promtail dual-writes to Observe | `vm-agents/` |
 
 **CPU Budget (CPU_X64_S — 2 vCPU total):**
 
@@ -1611,6 +1643,8 @@ ALTER USER PREFECT_SVC SET NETWORK_POLICY = PREFECT_SVC_POLICY;
 | `GRAFANA_SMTP_USER` | deploy_monitoring.sh | Gmail sender address for alerts |
 | `GRAFANA_SMTP_PASSWORD` | deploy_monitoring.sh | Gmail App Password (no spaces) |
 | `GRAFANA_SMTP_RECIPIENTS` | deploy_monitoring.sh | Alert email recipients |
+| `OBSERVE_DATASTREAM_TOKEN` | deploy.sh → pf_worker.yaml, deploy_monitoring.sh → prometheus.yml + pf_monitor.yaml | Datastream token (`ds1xxxxx:yyyyyy`) for direct OTLP export, Prometheus remote_write, and log dual-write to Observe |
+| `OBSERVE_COLLECTION_URL` | deploy.sh → pf_worker.yaml, deploy_monitoring.sh → prometheus.yml + pf_monitor.yaml | Observe collect endpoint (`https://<customer_id>.collect.observeinc.com`) |
 | `SNOWFLAKE_ACCOUNT` | flows | Snowflake account identifier |
 | `SNOWFLAKE_USER` | flows | Snowflake username (service user for GCP) |
 | `SNOWFLAKE_WAREHOUSE` | SPCS worker, flows | Snowflake warehouse for query execution |
@@ -2473,6 +2507,574 @@ The hook chain is: ruff → ruff-format → shellcheck → detect-secrets. Commo
 - **shellcheck** catches unused vars (SC2034) — remove them or `# shellcheck disable=SC2034`.
 - **detect-secrets + amend gotcha**: If detect-secrets fails, you `git add .secrets.baseline` and retry. If the retry uses `git commit --amend`, it squashes into the *previous* commit, silently changing its message. Always verify `git log --oneline -2` after amending.
 </details>
+
+## Observe for Snowflake (O4S)
+
+The project includes a dual-write observability setup: the existing Prometheus/Grafana/Loki stack
+for real-time SPCS monitoring, plus **Observe** for Snowflake-native telemetry (ACCOUNT_USAGE
+views, event tables, SPCS metering) and OTel-based APM.
+
+### Architecture
+
+```
+                    ┌──────────────────────────────┐
+                    │       Observe Platform        │
+                    │  ┌────────────┐ ┌──────────┐ │
+                    │  │ Snowflake  │ │ Tracing  │ │
+                    │  │ Datasets   │ │ Datasets │ │
+                    │  │ (O4S)      │ │ (OTel)   │ │
+                    │  └─────▲──────┘ └──▲───▲───┘ │
+                    └────────┼───────────┼───┼─────┘
+                             │           │   │
+              O4S ingest token  OTLP/HTTP │  Prometheus
+              (Snowflake app)  (direct)   │  remote_write
+                             │           │   │
+    ┌────────────────────────┤           │   │
+    │ Snowflake Account      │           │   │
+    │ ┌──────────────────┐   │   ┌───────┘   │
+    │ │ O4S Native App   │───┘   │           │
+    │ │ (serverless tasks│       │           │
+    │ │  send ACCOUNT_   │    PF_WORKER      │
+    │ │  USAGE views)    │    (direct OTLP   │
+    │ └──────────────────┘     export)       │
+    │                                        │
+    │ ┌──────────────────┐                   │
+    │ │ PF_MONITOR       │───────────────────┘
+    │ │  Prometheus       │  (remote_write all
+    │ │  observe-agent    │   scraped metrics)
+    │ └──────────────────┘
+    └────────────────────────────────────────┘
+```
+
+**Four data paths:**
+
+| Path | Source | Token Type | Observe Datasets Created |
+|------|--------|------------|--------------------------|
+| **O4S** | Snowflake ACCOUNT_USAGE views (QUERY_HISTORY, LOGIN_HISTORY, etc.) | Snowflake app ingest token (`ds1Bqq...`) | `snowflake/*` (lowercase — e.g., `snowflake/QUERY_HISTORY`, `snowflake/Account`) |
+| **OTel** | PF_WORKER traces (direct OTLP/HTTP to Observe) | Datastream ingest token (`ds1la6...`) | `Tracing/*` (Span, Service, Trace, etc.) |
+| **Prometheus** | All Prometheus-scraped metrics (Prefect, Redis, Postgres, VM workers) | Datastream ingest token (`ds1la6...`) | Prometheus metrics in the datastream's raw dataset |
+| **Logs** | SPCS log poller + VM Promtail (Loki-compatible push) | Datastream ingest token (`ds1la6...`) | Log data in the datastream's raw dataset |
+
+### APM Trace Collection (SPCS Workers → Observe)
+
+SPCS workers export OpenTelemetry traces **directly to Observe's collect endpoint** — they
+do NOT route through the observe-agent sidecar in PF_MONITOR.
+
+**Why direct export?** SPCS public endpoints require Snowflake auth headers
+(`Authorization: Snowflake Token="<PAT>"`) on every request. The Python OTel SDK has no
+mechanism to inject these headers into its OTLP exporter. When PF_WORKER tries to send
+traces to the observe-agent's public endpoint (`pf-monitor:4318`), the SPCS ingress proxy
+rejects the request with `ConnectionResetError(104, 'Connection reset by peer')`. This is
+a fundamental SPCS networking limitation — cross-service OTLP over public endpoints does
+not work without Snowflake auth.
+
+**The solution:** PF_WORKER exports OTLP traces directly to Observe's collect endpoint
+(`https://<customer_id>.collect.observeinc.com/v1/otel/v1/traces`) using a **datastream token** in
+the `Authorization: Bearer` header. This bypasses the SPCS auth gate entirely since it's
+an external endpoint accessed through an EAI.
+
+**Setup requirements (3 things must all be true):**
+
+| Requirement | Where | How to Verify |
+|-------------|-------|---------------|
+| `OBSERVE_DATASTREAM_TOKEN` in `.env` | `.env` file | Must be a datastream token (`ds1xxxxx:yyyyyy`), NOT the user API token |
+| `OBSERVE_COLLECTION_URL` in `.env` | `.env` file | Must be `https://<customer_id>.collect.observeinc.com` |
+| EAI with Observe collect host | `MONITOR_EGRESS_EAI` | `DESCRIBE NETWORK RULE MONITOR_EGRESS_RULE` must include `<customer_id>.collect.observeinc.com:443` |
+
+**Token types — do not confuse them:**
+
+| Token | Format | Works For |
+|-------|--------|-----------|
+| **Datastream token** | `ds1xxxxx:yyyyyy` | Collect/ingest endpoint (OTLP traces, metrics, logs) |
+| **User API token** | `VcG3ZZ...` (alphanumeric) | GraphQL API, Terraform provider |
+| **App ingest token** | `ds1xxxxx:yyyyyy` | O4S native app → Snowflake datasets |
+
+The datastream token is created via Observe's GraphQL API:
+```bash
+curl -s -H "Authorization: Bearer <customer_id> <api_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"mutation { createDatastreamToken(input: {name: \"spcs-worker-otlp\"}) { datastreamToken { id token } } }"}' \
+  "https://<customer_id>.observeinc.com/v1/meta"
+```
+
+**How it flows through deploy.sh:**
+
+1. `.env` contains `OBSERVE_DATASTREAM_TOKEN` and `OBSERVE_COLLECTION_URL`
+2. `specs/pf_worker.yaml` uses placeholders: `__OBSERVE_DATASTREAM_TOKEN__`, `__OBSERVE_COLLECTION_URL__`
+3. `deploy.sh` (in `upload_specs()`) substitutes placeholders with real values via `sed` before uploading to `@PREFECT_SPECS`
+4. Secrets never appear in version control — only placeholders
+
+**Relevant env vars in pf_worker.yaml (after substitution):**
+
+```yaml
+OTEL_SERVICE_NAME: "prefect-worker-spcs"
+OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "https://<customer_id>.collect.observeinc.com/v1/otel/v1/traces"
+OTEL_EXPORTER_OTLP_TRACES_HEADERS: "authorization=Bearer ds1xxxxx:yyyyyy"
+OTEL_TRACES_EXPORTER: "otlp"
+OTEL_METRICS_EXPORTER: "none"
+OTEL_LOGS_EXPORTER: "none"
+OTEL_RESOURCE_ATTRIBUTES: "deployment.environment.name=spcs,service.namespace=prefect"
+OTEL_TRACES_SAMPLER: "parentbased_always_on"
+```
+
+> **Note:** Use `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (signal-specific) not
+> `OTEL_EXPORTER_OTLP_ENDPOINT` (generic). The signal-specific variant includes
+> the full path (`/v1/otel/v1/traces`). The generic variant would append `/v1/traces`
+> automatically, resulting in a double-path. Similarly, use `OTEL_EXPORTER_OTLP_TRACES_HEADERS`
+> to scope headers to traces only, since metrics and logs exporters are disabled.
+
+**EAI requirement:** PF_WORKER must include `MONITOR_EGRESS_EAI` in its
+`EXTERNAL_ACCESS_INTEGRATIONS` list (in addition to `PREFECT_WORKER_EAI`). This EAI
+uses `MONITOR_EGRESS_RULE` which includes the Observe collect host. Both
+`07_create_services.sql` and `07b_update_services.sql` include this.
+
+**Troubleshooting:**
+
+- **`ConnectionResetError(104)`** in PF_WORKER logs → Worker is trying to send to
+  `pf-monitor:4318` (the old observe-agent relay). Check that the spec has the direct
+  Observe endpoint, not the internal SPCS DNS name.
+- **`401 Unauthorized`** from Observe → Wrong token type. Must be a datastream token
+  (`ds1xxxxx:yyyyyy`), not the user API token.
+- **No traces in Observe** → Check that `MONITOR_EGRESS_EAI` is in PF_WORKER's EAI list
+  (`DESCRIBE SERVICE PF_WORKER`). Without egress access, OTLP exports silently fail.
+- **Placeholders not substituted** → Run `deploy.sh --update` (not manual PUT) so that
+  `upload_specs()` performs the `sed` substitution.
+
+### Prometheus Metrics → Observe (remote_write)
+
+In addition to APM traces, all Prometheus-scraped metrics are dual-written to Observe via
+Prometheus's native `remote_write` mechanism. This sends every metric from every scrape job
+(Prefect server, Redis, Postgres, prefect-exporter, VM workers, etc.) to Observe, filling
+the gaps between the 9 Grafana dashboards and the 5 Observe dashboards.
+
+**How it works:**
+
+1. `prometheus.yml` includes a `remote_write` section with the Observe collect endpoint
+2. Uses the same datastream token as OTLP traces (`OBSERVE_DATASTREAM_TOKEN`)
+3. `deploy_monitoring.sh` substitutes `__OBSERVE_COLLECTION_URL__` and `__OBSERVE_DATASTREAM_TOKEN__` placeholders before uploading to `@MONITOR_STAGE`
+4. A `write_relabel_configs` filter drops noisy Go runtime and Prometheus internal metrics (`go_.*`, `promhttp_.*`, `prometheus_sd_.*`)
+
+**Config in `prometheus.yml` (after substitution):**
+
+```yaml
+remote_write:
+  - url: "https://<customer_id>.collect.observeinc.com/v1/prometheus"
+    authorization:
+      credentials: "ds1xxxxx:yyyyyy"
+    queue_config:
+      capacity: 10000
+      max_shards: 5
+      max_samples_per_send: 2000
+      batch_send_deadline: 10s
+    write_relabel_configs:
+      - source_labels: [__name__]
+        regex: "go_.*|promhttp_.*|prometheus_sd_.*"
+        action: drop
+```
+
+**Setup requirements:**
+
+| Requirement | Where | How to Verify |
+|-------------|-------|---------------|
+| `OBSERVE_DATASTREAM_TOKEN` in `.env` | `.env` file | Same token used for OTLP traces |
+| `OBSERVE_COLLECTION_URL` in `.env` | `.env` file | `https://<customer_id>.collect.observeinc.com` |
+| `MONITOR_EGRESS_RULE` includes Observe host | Network rule | `DESCRIBE NETWORK RULE MONITOR_EGRESS_RULE` |
+
+If `OBSERVE_COLLECTION_URL` or `OBSERVE_DATASTREAM_TOKEN` are not set in `.env`,
+`deploy_monitoring.sh` uploads `prometheus.yml` with the raw placeholders (unsubstituted)
+and prints a warning. Prometheus will fail to connect to Observe but continues scraping
+and serving Grafana normally.
+
+### Logs → Observe (Loki-compatible push)
+
+Logs from both SPCS containers and VM Docker containers are dual-written to Observe via
+its Loki-compatible push endpoint. This mirrors the same log data available in Grafana/Loki
+dashboards into Observe for unified observability.
+
+**Two log sources, same pattern:**
+
+| Source | How | Config |
+|--------|-----|--------|
+| **SPCS containers** | `event-log-poller` queries the SPCS event table, pushes to local Loki, then reuses the same Loki-format payload to POST to Observe | `images/spcs-log-poller/poller.py` |
+| **VM containers** | Promtail has two `clients` entries — one for SPCS Loki (via auth-proxy), one for Observe's Loki endpoint | `vm-agents/promtail-config.yaml` |
+
+**How it works:**
+
+1. Observe accepts Loki push format at `https://<customer_id>.collect.observeinc.com/v1/http/loki/api/v1/push`
+2. Authentication uses the same datastream token as metrics/traces (`Authorization: Bearer <token>`)
+3. For SPCS: `deploy_monitoring.sh` substitutes `__OBSERVE_LOKI_URL__` and `__OBSERVE_DATASTREAM_TOKEN__` in `pf_monitor.yaml`
+4. For VMs: Promtail expands `${OBSERVE_COLLECTION_URL}` and `${OBSERVE_DATASTREAM_TOKEN}` from compose environment (via `-config.expand-env=true`)
+
+**Graceful degradation:** If Observe env vars are empty or unset, both the poller and
+promtail silently skip the Observe push — local Loki ingestion is unaffected.
+
+### Setup: Observe Side (Do This First)
+
+> **Official docs:** [Prepare Observe to receive data from Snowflake](https://docs.observeinc.com/docs/prepare-observe-to-receive-data-from-snowflake)
+
+The Observe platform must be configured to receive Snowflake data **before** configuring
+the Snowflake native app. Without this step, O4S sends data but Observe doesn't parse it
+into datasets.
+
+1. **Log into Observe** at `https://<customer_id>.observeinc.com`
+2. Click **Applications** in the left nav
+3. Find and **install the "Snowflake" app**
+4. Open the Snowflake app → **Connections** tab → **Get started**
+5. Name the token (e.g., `<account_id>-o4s`) and click **Continue**
+6. **Copy the ingest token** — format is `ds1xxxxx:yyyyyy`
+7. Save it — you'll use this as the `OBSERVE_TOKEN` secret value in Step 1 below
+
+> **Two token types in Observe — do not confuse them:**
+>
+> | Token | Format | Purpose | Where to Get |
+> |-------|--------|---------|--------------|
+> | **App ingest token** | `ds1xxxxx:yyyyyy` | Routes data through Snowflake app pipeline → creates `Snowflake/*` datasets | Snowflake app → Connections tab |
+> | **API token** | `VcG3ZZ...` (alphanumeric) | Management API for Terraform, GraphQL queries | Settings → Account → API Keys |
+>
+> The O4S native app needs the **app ingest token**. Terraform needs the **API token**.
+> Using the wrong token type is the #1 cause of "data sent but no datasets appear".
+
+### Setup: Snowflake Side
+
+> **Official docs:** [Configure the Observe for Snowflake app](https://docs.observeinc.com/docs/configure-the-observe-for-snowflake-app)
+
+**Automated setup (recommended):** Run `scripts/setup-o4s.sh` which handles all SQL steps,
+validation, and Terraform deployment interactively:
+
+```bash
+# Full setup — prompts for tokens, runs SQL, validates, deploys Terraform
+./scripts/setup-o4s.sh
+
+# Validate only — check task health and dataset discovery
+./scripts/setup-o4s.sh --validate-only
+
+# Terraform only — skip SQL, just deploy dashboards/monitors
+./scripts/setup-o4s.sh --terraform-only
+```
+
+**Manual setup:** Run `sql/08b_setup_o4s.sql` as `ACCOUNTADMIN`. The script has 9 steps.
+
+> **Note on roles:** The [official O4S docs](https://docs.observeinc.com/docs/configure-the-observe-for-snowflake-app)
+> use `SYSADMIN` for object creation, `ACCOUNTADMIN` for EAI/telemetry, and `SECURITYADMIN`
+> for grants to the app. Our script simplifies this to `ACCOUNTADMIN` throughout, which works
+> because `ACCOUNTADMIN` inherits all three roles. If your org requires least-privilege roles,
+> follow the official docs' role-switching pattern.
+
+```bash
+# Prerequisites:
+# 1. Install "Observe for Snowflake" from Snowflake Marketplace
+# 2. Complete "Setup: Observe Side" above (get the ingest token)
+
+# Then run:
+snow sql -f sql/08b_setup_o4s.sql --connection <conn>
+```
+
+**Step summary:**
+
+| Step | What | SQL |
+|------|------|-----|
+| 1 | Create secrets database + token/endpoint secrets | `CREATE SECRET ... TYPE = GENERIC_STRING` |
+| 2 | Network rule + External Access Integration | `CREATE NETWORK RULE ... MODE = EGRESS` |
+| 3 | Enable telemetry event sharing | `ALTER APPLICATION ... SET AUTHORIZE_TELEMETRY_EVENT_SHARING = TRUE` |
+| 4 | Grant ACCOUNT_USAGE + task execution | `GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO APPLICATION ...` |
+| 5 | Grant secrets and EAI to the app | `GRANT READ ON SECRET ... TO APPLICATION ...` |
+| 6 | Grant event table access | `GRANT APPLICATION ROLE SNOWFLAKE.EVENTS_ADMIN TO APPLICATION ...` |
+| 7 | Register warehouse | `CALL ... REGISTER_SINGLE_REFERENCE('warehouse', 'ADD', ...)` |
+| 8 | Provision connector | `CALL ... PROVISION_CONNECTOR(PARSE_JSON(...))` |
+| 9 | **MANUAL** — Open O4S Streamlit UI to add views | Snowsight → Data Products → Apps → OBSERVE_FOR_SNOWFLAKE |
+
+**Step 9 (manual — cannot be automated):**
+
+The `ADD_ACCOUNT_USAGE_HISTORY` procedure uses an internal whitelist that is only accessible
+through the Streamlit UI dropdown. Direct SQL calls with view names fail with "unsupported view".
+
+1. Open Snowsight → **Data Products → Apps → OBSERVE_FOR_SNOWFLAKE**
+2. **History Views** → click "+ Add View" and add:
+   `QUERY_HISTORY`, `WAREHOUSE_METERING_HISTORY`, `METERING_HISTORY`,
+   `LOGIN_HISTORY`, `SNOWPARK_CONTAINER_SERVICES_HISTORY`, `TASK_HISTORY`
+3. **Event Tables** → click "+ Add" and add: `snowflake.telemetry.events`
+4. Click **Save Changes** then **Start All**
+5. Stagger schedules 1–2 minutes apart for best performance
+
+### Terraform Dashboards & Monitors
+
+Once O4S datasets appear in Observe (takes 5–15 minutes after the first task run with the
+correct ingest token), deploy Terraform-managed dashboards and monitors:
+
+```bash
+cd terraform/observe
+
+# 1. Copy the example tfvars and fill in your API token
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars: set observe_api_token (from Settings → Account → API Keys)
+
+# 2. Initialize and deploy
+terraform init
+terraform plan
+terraform apply
+```
+
+**Terraform resources:**
+
+| Type | Name | Description |
+|------|------|-------------|
+| Dashboard | Prefect SPCS Overview | Container services billing, compute pool usage |
+| Dashboard | Prefect Worker APM | OTel trace latency (p50/p95/p99), error rates, throughput |
+| Dashboard | Warehouse & Query Performance | Credit usage by warehouse, query duration, error volume |
+| Dashboard | Cost & Metering Overview | Daily credits by service type, task run counts |
+| Dashboard | Login & Security Activity | Login volume, failed login attempts, client types |
+| Monitor | SPCS Daily Credit Spike | Alert when daily SPCS credits exceed threshold (default: 50) |
+| Monitor | Long-Running Queries | Alert when queries exceed 30 minutes |
+| Monitor | Prefect Worker Heartbeat Missing | Alert when no OTel spans for 10 minutes |
+| Monitor | Warehouse Idle Cost | Alert when hourly warehouse credits exceed threshold (default: 2) |
+
+**Terraform variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `observe_customer_id` | — | Observe customer ID (e.g., `175859677949`) |
+| `observe_api_token` | — | API token (NOT ingest token) from Settings → Account → API Keys |
+| `workspace_name` | `Default` | Observe workspace name |
+| `spcs_credit_threshold` | `50` | Daily SPCS credit alert threshold |
+| `long_query_duration_ms` | `1800000` | Query duration alert threshold (30 min) |
+| `warehouse_idle_credit_threshold` | `2` | Hourly warehouse credit alert threshold |
+
+### O4S Gotchas
+
+**Setup & Configuration:**
+
+- **O4S is a two-sided setup — Observe side MUST come first**: You must install the Snowflake
+  app in the Observe platform (Applications → Snowflake → Install) **before** configuring the
+  Snowflake native app. The Observe-side app creates the data pipeline that parses incoming
+  O4S data into `snowflake/*` datasets. Without it, O4S sends data that lands in a raw
+  datastream but never gets parsed.
+
+- **Data sent but no datasets in Observe**: The #1 cause is using the wrong ingest token.
+  The O4S native app must use an **app ingest token** created from the Snowflake app's
+  Connections tab in Observe — **not** a generic datastream token, and **not** an API token.
+  Without the app-specific token, data arrives but Observe doesn't route it through the
+  Snowflake app pipeline:
+  ```
+  WRONG: Generic datastream token (ds1la6...) → data lands in raw datastream, no datasets
+  WRONG: API token (VcG3ZZ...)              → authentication fails entirely
+  RIGHT: App ingest token (ds1Bqq...)       → data routed through Snowflake app → datasets created
+  ```
+
+- **Updating the token after a mistake**: If you initially used the wrong token, update the
+  Snowflake secret and the O4S tasks will pick up the new value on their next run:
+  ```sql
+  ALTER SECRET SEND_TO_OBSERVE.O4S.OBSERVE_TOKEN
+    SET SECRET_STRING = '<new_app_ingest_token>';
+  ```
+  Datasets appear in Observe 5–15 minutes after the first successful task run with the
+  correct token. No need to restart tasks — they run on a cron schedule.
+
+- **"unsupported view" error from `ADD_ACCOUNT_USAGE_HISTORY`**: The procedure has an internal
+  Python whitelist. You **must** use the Streamlit UI dropdown to add views — direct SQL calls
+  with any view name format will fail.
+
+- **Missing grants = silent failure**: Without `GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE`,
+  `GRANT EXECUTE TASK`, and `GRANT EXECUTE MANAGED TASK`, the O4S tasks either fail to create
+  or fail silently. The Streamlit UI may show "active" but no data flows.
+
+- **`REGISTER_SINGLE_REFERENCE` syntax**: The warehouse registration uses a `SYSTEM$REFERENCE`
+  call, not a plain warehouse name:
+  ```sql
+  CALL OBSERVE_FOR_SNOWFLAKE.CONFIG.REGISTER_SINGLE_REFERENCE(
+      'warehouse', 'ADD', SYSTEM$REFERENCE('WAREHOUSE', 'PREFECT_WH', 'PERSISTENT', 'USAGE'));
+  ```
+
+- **EAI must be granted to both the app AND your role**: The O4S app needs
+  `GRANT USAGE ON INTEGRATION ... TO APPLICATION OBSERVE_FOR_SNOWFLAKE` for its tasks.
+  If you also run observe-agent in SPCS, grant the EAI to your service role too
+  (`GRANT USAGE ON INTEGRATION ... TO ROLE PREFECT_ROLE`).
+
+- **`EVENTS_ADMIN` application role**: Step 6 grants `SNOWFLAKE.EVENTS_ADMIN` to the app
+  for event table access. This is a Snowflake application role (not an account role) — the
+  syntax is `GRANT APPLICATION ROLE SNOWFLAKE.EVENTS_ADMIN TO APPLICATION ...`.
+
+**Monitoring & Debugging:**
+
+- **O4S tasks ARE visible in `ACCOUNT_USAGE.TASK_HISTORY`**: Despite being serverless tasks
+  owned by the native app, O4S tasks **do** appear in `SNOWFLAKE.ACCOUNT_USAGE.TASK_HISTORY`
+  with `DATABASE_NAME = 'OBSERVE_FOR_SNOWFLAKE'`. They are also visible via
+  `INFORMATION_SCHEMA.TASK_HISTORY()`. However, `SHOW TASKS` returns 0 rows because you
+  lack direct access to the app's task objects. Use this query to verify tasks are running:
+  ```sql
+  SELECT NAME, STATE, SCHEDULED_TIME, COMPLETED_TIME
+  FROM SNOWFLAKE.ACCOUNT_USAGE.TASK_HISTORY
+  WHERE DATABASE_NAME = 'OBSERVE_FOR_SNOWFLAKE'
+    AND SCHEDULED_TIME > DATEADD('hour', -2, CURRENT_TIMESTAMP())
+  ORDER BY SCHEDULED_TIME DESC;
+  ```
+  Key task names to look for:
+  - `O4S_TASK_COLLECT_ACCOUNT_USAGE_QUERY_HISTORY_0` — collects QUERY_HISTORY (every 5 min)
+  - `O4S_TASK_COLLECT_ACCOUNT_USAGE_LOGIN_HISTORY_0` — collects LOGIN_HISTORY (every 15 min)
+  - `O4S_TASK_SEND_ACCOUNT_USAGE_HISTORY_VIEWS_0` — sends collected data to Observe
+  - `O4S_TASK_SEND_EVENT_TABLE_...` — sends event table data (every 1 min)
+
+  All tasks should show `STATE = 'SUCCEEDED'`. `SKIPPED` (error code `0040003`) is normal
+  for the SEND task when no new data has been collected since the last send.
+
+- **Transaction rollback on manual SEND calls**: Calling `SEND_ACCOUNT_USAGE_HISTORY_TO_OBSERVE`
+  manually may fail with "Scoped transaction started in stored procedure is incomplete and it was
+  rolled back." This is expected when called outside the task context — the scheduled tasks run
+  under the app's own execution context with different privileges.
+
+- **ACCOUNT_USAGE latency**: Snowflake's ACCOUNT_USAGE views have up to 45 minutes of latency.
+  The O4S `SKIP_ACCOUNT_USAGE_BACKFILL=False` setting (default) backfills historical data on
+  first run, so initial record counts may be large.
+
+**Dataset Naming & Terraform:**
+
+- **Dataset names use lowercase `snowflake/` prefix**: O4S creates 100+ datasets in Observe
+  with a **lowercase** `snowflake/` prefix. History views keep their uppercase names
+  (e.g., `snowflake/QUERY_HISTORY`, `snowflake/WAREHOUSE_METERING_HISTORY`), while object
+  datasets use title case (e.g., `snowflake/Account`, `snowflake/Warehouse`, `snowflake/User`).
+  Terraform `data.observe_dataset` lookups are **case-sensitive** — the exact name must match.
+
+- **OTel dataset names**: The Observe Tracing integration creates datasets named `Tracing/Span`,
+  `Tracing/Service`, `Tracing/Trace`, etc. — **NOT** `OpenTelemetry/Span`. Metrics from
+  observe-agent appear as `Metrics/OpenTelemetry`.
+
+- **Discovering dataset names for Terraform**: Use the Observe GraphQL API to list all datasets
+  in your workspace — the UI can be slow for 100+ datasets:
+  ```bash
+  curl -s -H "Authorization: Bearer <customer_id> <api_token>" \
+    -H "Content-Type: application/json" \
+    -d '{"query":"{ datasetSearch { dataset { id name } } }"}' \
+    "https://<customer_id>.observeinc.com/v1/meta" | python3 -m json.tool
+  ```
+
+- **Observe API auth format**: The Observe API uses a **space-separated** bearer token:
+  `Authorization: Bearer <customer_id> <api_token>` — not just the token alone. This applies
+  to both the GraphQL API and the Terraform provider. Example:
+  ```
+  WRONG:  Authorization: Bearer VcG3ZZwE8gh49sxhDhCV2cDvZWL3Yvqv
+  RIGHT:  Authorization: Bearer 175859677949 VcG3ZZwE8gh49sxhDhCV2cDvZWL3Yvqv
+  ```
+
+- **GraphQL introspection is disabled**: You cannot introspect the Observe GraphQL schema
+  (`{"message":"introspection disabled"}`). Use trial-and-error with field names, or check the
+  Observe API docs. The `datasetSearch` query (shown above) returns all datasets without
+  requiring any arguments.
+
+- **OPAL field names are CASE-SENSITIVE**: Snowflake O4S datasets use UPPERCASE field names
+  (`CREDITS_USED`, `WAREHOUSE_NAME`, `EXECUTION_STATUS`, `TOTAL_ELAPSED_TIME`). OTel Tracing
+  datasets use lowercase (`service_name`, `status_code`, `duration`, `span_type`). Using
+  `credits_used` instead of `CREDITS_USED` in a dashboard/monitor OPAL pipeline will fail with
+  "the field does not exist".
+
+- **Dashboards need `layout` attribute — not just `stages`**: The `observe_dashboard` resource
+  requires both `stages` (OPAL data pipelines) and `layout` (card grid definitions). Without
+  `layout`, the dashboard opens as a blank canvas — the stages exist but nothing renders.
+
+  **CRITICAL**: The layout format uses `gridLayout.sections[].items[]` — NOT `gridLayout.widgets[]`.
+  The Terraform registry example only shows `stages` and omits `layout` entirely, which is misleading.
+  The correct format was reverse-engineered from Observe's own GCP Terraform module
+  (`observeinc/terraform-observe-google-cloud-monitoring/dashboard_home.tf`):
+  ```hcl
+  layout = jsonencode({
+    autoPack = true
+    gridLayout = {
+      sections = [
+        {
+          card = {
+            cardType = "section"
+            closed   = false
+            id       = "section-my-section"
+            title    = "Section Title"
+          }
+          items = [
+            {
+              card = {
+                cardType = "stage"
+                id       = "card-my-card"
+                stageId  = "stage-id-here"  # must match a stage id
+              }
+              layout = {
+                h           = 12        # height in grid units
+                i           = "card-my-card"  # must match card.id
+                isDraggable = true
+                isResizable = true
+                moved       = false
+                static      = false
+                w           = 12        # width (12 = full width)
+                x           = 0         # column position
+                y           = 0         # row position
+              }
+            },
+          ]
+        },
+      ]
+    }
+  })
+  ```
+  Common mistakes:
+  - Using `widgets = [{ cardId, title, viewType, width, height }]` — this is NOT the Observe format
+  - Missing `autoPack = true` — cards may not auto-arrange
+  - Using `height`/`width` instead of `h`/`w`
+
+- **Stages need a `layout` object — not just the dashboard**: This is the #1 cause of
+  dashboards showing **"No query results returned"** even when data exists. Each stage in
+  `stages = jsonencode([...])` must have a non-null `layout` object containing `steps`,
+  `inputList`, and `queryPresentation`. Without these, the Observe UI sets `layout: null`
+  on the stage and **never fires a query** — the data exists but the UI doesn't know how
+  to fetch it.
+
+  The minimum required fields in each stage `layout`:
+  ```json
+  {
+    "type": "table",
+    "serializable": true,
+    "steps": [{
+      "id": "step-inp-1", "opal": [], "type": "InputStep", "index": 0,
+      "isPinned": false, "customName": "Input",
+      "customSummary": "<inputName from stage input[]>",
+      "datasetQueryId": {
+        "resultKinds": ["ResultKindSchema", "ResultKindData"],
+        "ignoreCompress": false
+      }
+    }],
+    "inputList": [{
+      "id": "qi-1",
+      "datasetId": "<dataset ID>",
+      "inputName": "<inputName from stage input[]>",
+      "inputRole": "Data",
+      "isUserInput": false
+    }],
+    "queryPresentation": {
+      "limit": 1000, "rollup": {}, "linkify": true, "progressive": true,
+      "resultKinds": ["ResultKindStats","ResultKindData","ResultKindSchema","ResultKindProgress"],
+      "loadEverything": false,
+      "initialRollupFilter": {"mode": "Last"}
+    },
+    "viewModel": {"stageTab": "table", "showTimeRuler": true, "builderOpalTab": "OPAL"},
+    "managers": [{"id": "ts-1", "type": "Timescrubber", "isDisabled": true, "isResourceCountEnabled": false}]
+  }
+  ```
+
+  For chart visualizations, add a `Vis` manager and set `viewModel.stageTab` to `"vis"`:
+  - `singlevalue` — single stat (use with `statsby ... group_by()`)
+  - `bar` — bar chart (use with `statsby ... group_by(DIMENSION)`)
+  - `timeseries` — time series (use with `timechart`)
+
+  This was discovered by comparing API-created dashboards (all broken — `layout: null` on
+  every stage) against the working O4S native "Usage Dashboard" (id 42986178) which had full
+  `layout` objects on every stage including `steps`, `inputList`, and `queryPresentation`.
+
+- **Use `count` monitors, not `threshold`, for O4S datasets**: Threshold monitors with `align`
+  require the `metric` interface, which in turn requires the dataset to be an `event` dataset.
+  O4S history view datasets are not event datasets — attempting `interface "metric"` fails with
+  `Interface 'metric' requires a dataset qualified as one of: '["event"]'`. The fix is to use
+  `count` monitors (rule_kind = "count") which work on any dataset without interface requirements.
+  Use `filter` to narrow rows, then count matching rows against a threshold.
+
+- **Terraform provider**: Uses `terraform.observeinc.com/observeinc/observe` v0.14. Auth is
+  via `customer` (customer ID) + `api_token` (API key, not ingest token). SSO users
+  (Google, Okta) cannot use email/password auth — they must generate an API token from
+  Settings → Account → API Keys.
 
 ## Completed Milestones
 
