@@ -135,11 +135,11 @@ if $BUILD_MONITORING; then
         --load "$PROJECT_DIR/images/prefect-exporter"
     PUSH_LIST+=("prefect-exporter:v3-status" "prefect-exporter:v2-fix")
 
-    echo "  Building event-log-poller:v9..."
+    echo "  Building event-log-poller:v10..."
     docker buildx build --platform linux/amd64 \
-        -t "$REGISTRY/event-log-poller:v9" \
+        -t "$REGISTRY/event-log-poller:v10" \
         --load "$PROJECT_DIR/images/spcs-log-poller"
-    PUSH_LIST+=("event-log-poller:v9")
+    PUSH_LIST+=("event-log-poller:v10")
 
     # Backup sidecars — build context is images/ (they COPY stage-backup/backup_lib.py)
     echo "  Building prom-backup:v1..."

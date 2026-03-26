@@ -53,6 +53,9 @@ def get_connection() -> snowflake.connector.SnowflakeConnection:
         warehouse=SNOWFLAKE_WAREHOUSE,
         database=SNOWFLAKE_DATABASE,
         session_parameters={"QUERY_TAG": "monitoring/spcs-log-poller"},
+        # SPCS containers cannot reach ocsp.digicert.com (no EAI route).
+        # Skip OCSP entirely — the connection is internal to Snowflake infra.
+        insecure_mode=True,
     )
 
 

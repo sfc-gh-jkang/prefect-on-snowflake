@@ -185,7 +185,7 @@ spec:
     # them to the co-located Loki instance via HTTP push API.
     # Uses SPCS OAuth token at /snowflake/session/token for Snowflake auth.
     - name: event-log-poller
-      image: /prefect_db/prefect_schema/prefect_repository/event-log-poller:v9
+      image: /prefect_db/prefect_schema/prefect_repository/event-log-poller:v10
       resources:
         requests:
           cpu: 0.1
