@@ -1,0 +1,3 @@
+# Copy this file to terraform.tfvars and fill in values
+observe_customer_id = "175859677949"
+observe_api_token   = "" # Generate from Observe UI: Settings → API Tokens
