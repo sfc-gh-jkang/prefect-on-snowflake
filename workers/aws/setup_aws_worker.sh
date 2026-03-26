@@ -194,7 +194,13 @@ NGINXEOF
 # Write Dockerfile
 cat > Dockerfile.worker <<'DOCKEREOF'
 FROM prefecthq/prefect:3-python3.12
-RUN pip install --no-cache-dir snowflake-connector-python
+RUN pip install --no-cache-dir \
+    "snowflake-connector-python>=3.6,<4" \
+    opentelemetry-distro \
+    opentelemetry-exporter-otlp
+RUN opentelemetry-bootstrap -a install
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD python -c "import prefect; print('ok')" || exit 1
 DOCKEREOF
 
 # Write docker-compose
@@ -238,7 +244,14 @@ services:
       SNOWFLAKE_WAREHOUSE: "${SNOWFLAKE_WAREHOUSE:-COMPUTE_WH}"
       SNOWFLAKE_DATABASE: "${SNOWFLAKE_DATABASE:-PREFECT_DB}"
       SNOWFLAKE_SCHEMA: "${SNOWFLAKE_SCHEMA:-PREFECT_SCHEMA}"
-    command: prefect worker start --pool aws-pool --type process --with-healthcheck
+      SNOWFLAKE_ROLE: "${SNOWFLAKE_ROLE:-ACCOUNTADMIN}"
+      # OTel auto-instrumentation — traces/metrics sent to observe-agent via OTLP
+      OTEL_SERVICE_NAME: "prefect-worker-aws"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://observe-agent:4317"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      OTEL_RESOURCE_ATTRIBUTES: "deployment.environment.name=prefect-worker,service.namespace=prefect"
+      OTEL_TRACES_SAMPLER: "parentbased_always_on"
+    command: opentelemetry-instrument prefect worker start --pool aws-pool --type process --with-healthcheck
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,urllib.error,sys\ntry:\n urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=5)\nexcept urllib.error.HTTPError:\n sys.exit(0)\nexcept Exception:\n sys.exit(1)"]
       interval: 30s
