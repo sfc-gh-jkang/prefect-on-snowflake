@@ -22,31 +22,12 @@ scrape_configs:
           - node-exporter:9100
 
   # Docker container metrics (per-container CPU, memory, network, disk I/O)
+  # cAdvisor runs with --docker_only=true --disable_root_cgroup_stats=true
+  # so only Docker container metrics are exposed (no host cgroups / NaN noise).
   - job_name: cadvisor
     static_configs:
       - targets:
           - cadvisor:8080
-    # Drop non-Docker cgroup metrics — cAdvisor reports NaN for host cgroups
-    # without resource limits, causing "out of order sample" errors in Prometheus.
-    # Docker containers live at /system.slice/docker-<hash>.scope — keep those.
-    # Drop everything else: systemd services (.service), slices, user.slice, init.scope.
-    metric_relabel_configs:
-      # Drop systemd services (e.g. /system.slice/auditd.service)
-      - source_labels: [id]
-        regex: '.+\.service.*'
-        action: drop
-      # Drop bare slice cgroups and sub-slices (e.g. /system.slice, /system.slice/system-getty.slice)
-      - source_labels: [id]
-        regex: '.+\.slice(/.*\.slice)?'
-        action: drop
-      # Drop user.slice tree
-      - source_labels: [id]
-        regex: '/user\.slice.*'
-        action: drop
-      # Drop init.scope
-      - source_labels: [id]
-        regex: '/init\.scope'
-        action: drop
 
 # Push all scraped metrics to the SPCS Prometheus remote_write receiver.
 # The auth-proxy-monitor sidecar handles PAT injection for SPCS auth.
