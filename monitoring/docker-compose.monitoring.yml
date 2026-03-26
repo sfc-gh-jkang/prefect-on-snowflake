@@ -111,11 +111,16 @@ services:
   # OBSERVE_URL env vars — they must be literal values in the YAML config.
   observe-agent:
     image: observeinc/observe-agent:2.0.0
+    pid: host
     volumes:
       - ./vm-agents/observe-agent.yaml:/etc/observe-agent/observe-agent.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/log:/var/log:ro
       - /:/hostfs:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    expose:
+      - "4317"
+      - "4318"
     environment:
       HOST_PROC: /hostfs/proc
       HOST_SYS: /hostfs/sys

@@ -413,10 +413,14 @@ PROMTAILEOF
 token: "__OBSERVE_TOKEN__"
 observe_url: "__OBSERVE_COLLECTION_URL__"
 
+# Accept OTLP traces/metrics/logs from other containers (e.g. Prefect worker APM)
 forwarding:
   enabled: true
   metrics:
     output_format: otel
+  endpoints:
+    grpc: 0.0.0.0:4317
+    http: 0.0.0.0:4318
 
 application:
   RED_metrics:
@@ -443,6 +447,48 @@ host_monitoring:
 resource_attributes:
   service.name: prefect.logs
   deployment.environment.name: prefect-worker
+
+# Docker container metrics + logs via OTel collector overrides
+otel_config_overrides:
+  receivers:
+    docker_stats:
+      endpoint: unix:///var/run/docker.sock
+      collection_interval: 30s
+      timeout: 20s
+      api_version: "1.25"
+      metrics:
+        container.cpu.usage.total:
+          enabled: true
+        container.memory.usage.total:
+          enabled: true
+        container.network.io.usage.rx_bytes:
+          enabled: true
+        container.network.io.usage.tx_bytes:
+          enabled: true
+        container.blockio.io_service_bytes_recursive:
+          enabled: true
+    filelog/containers:
+      include:
+        - /var/lib/docker/containers/**/*.log
+      include_file_path: true
+      retry_on_failure:
+        enabled: true
+      max_log_size: 4MiB
+      operators:
+        - type: json_parser
+          timestamp:
+            parse_from: attributes.time
+            layout: '%Y-%m-%dT%H:%M:%S.%LZ'
+  service:
+    pipelines:
+      metrics/docker:
+        receivers: [docker_stats]
+        processors: [memory_limiter, resourcedetection, resourcedetection/cloud, batch]
+        exporters: [prometheusremotewrite/observe]
+      logs/containers:
+        receivers: [filelog/containers]
+        processors: [memory_limiter, resourcedetection, resourcedetection/cloud, batch]
+        exporters: [otlphttp/observe, count]
 OBSERVEAGENTEOF
 
     # Monitoring docker-compose overlay
@@ -531,11 +577,16 @@ services:
   # token/observe_url are baked into observe-agent.yaml (not env vars)
   observe-agent:
     image: observeinc/observe-agent:2.0.0
+    pid: host
     volumes:
       - ./vm-agents/observe-agent.yaml:/etc/observe-agent/observe-agent.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/log:/var/log:ro
       - /:/hostfs:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    expose:
+      - "4317"
+      - "4318"
     environment:
       HOST_PROC: /hostfs/proc
       HOST_SYS: /hostfs/sys
