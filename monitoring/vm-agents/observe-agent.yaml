@@ -1,0 +1,43 @@
+# observe-agent.yaml — Observe Agent config for VM workers.
+# Runs alongside the existing Grafana stack (prometheus-agent + promtail)
+# to dual-write telemetry to Observe for side-by-side evaluation.
+#
+# IMPORTANT: token and observe_url MUST be literal values in this file.
+# The observe-agent does NOT support env var substitution in its config.
+# The setup script writes these values at deploy time from .env vars.
+# Do NOT commit actual secrets — use __OBSERVE_TOKEN__ / __OBSERVE_URL__
+# as placeholders in the setup script heredoc.
+
+token: "__OBSERVE_TOKEN__"
+observe_url: "__OBSERVE_URL__"
+
+forwarding:
+  enabled: true
+  metrics:
+    output_format: otel
+
+application:
+  RED_metrics:
+    enabled: true
+
+self_monitoring:
+  enabled: true
+  fleet:
+    enabled: true
+
+host_monitoring:
+  enabled: true
+  logs:
+    enabled: true
+    include:
+      - /var/log/**/*.log
+      - /var/log/syslog
+  metrics:
+    host:
+      enabled: true
+    process:
+      enabled: false
+
+resource_attributes:
+  service.name: prefect.logs
+  deployment.environment.name: prefect-worker

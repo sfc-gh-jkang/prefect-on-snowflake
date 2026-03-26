@@ -59,6 +59,10 @@ SF_SCHEMA="${SNOWFLAKE_SCHEMA:-PREFECT_SCHEMA}"
 MONITOR_PROM="${SPCS_MONITOR_ENDPOINT:-}"
 MONITOR_LOKI="${SPCS_MONITOR_LOKI_ENDPOINT:-}"
 
+# Observe (optional — dual-write telemetry to Observe for evaluation)
+OBS_TOKEN="${OBSERVE_TOKEN:-}"
+OBS_URL="${OBSERVE_COLLECTION_URL:-}"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 export AWS_PROFILE AWS_REGION
@@ -265,6 +269,8 @@ SPCS_MONITOR_LOKI_ENDPOINT=__SPCS_MONITOR_LOKI_ENDPOINT__
 WORKER_LOCATION=aws-__AWS_REGION__
 WORKER_POOL=aws-pool
 DNS_RESOLVER=169.254.169.253
+OBSERVE_TOKEN=__OBSERVE_TOKEN__
+OBSERVE_COLLECTION_URL=__OBSERVE_COLLECTION_URL__
 ENVEOF
 chmod 600 .env
 
@@ -399,6 +405,46 @@ scrape_configs:
           format: RFC3339Nano
 PROMTAILEOF
 
+    # Observe Agent config (dual-write to Observe alongside Grafana stack)
+    # IMPORTANT: token and observe_url MUST be literal values in this file.
+    # The observe-agent does NOT read OBSERVE_TOKEN/OBSERVE_URL env vars.
+    # Placeholders are replaced by bash parameter expansion after the heredoc.
+    cat > vm-agents/observe-agent.yaml <<OBSERVEAGENTEOF
+token: "__OBSERVE_TOKEN__"
+observe_url: "__OBSERVE_COLLECTION_URL__"
+
+forwarding:
+  enabled: true
+  metrics:
+    output_format: otel
+
+application:
+  RED_metrics:
+    enabled: true
+
+self_monitoring:
+  enabled: true
+  fleet:
+    enabled: true
+
+host_monitoring:
+  enabled: true
+  logs:
+    enabled: true
+    include:
+      - /var/log/**/*.log
+      - /var/log/syslog
+  metrics:
+    host:
+      enabled: true
+    process:
+      enabled: false
+
+resource_attributes:
+  service.name: prefect.logs
+  deployment.environment.name: prefect-worker
+OBSERVEAGENTEOF
+
     # Monitoring docker-compose overlay
     cat > docker-compose.monitoring.yml <<'MONCOMPOSEEOF'
 services:
@@ -481,6 +527,22 @@ services:
     depends_on:
       - auth-proxy-monitor
     restart: unless-stopped
+
+  # token/observe_url are baked into observe-agent.yaml (not env vars)
+  observe-agent:
+    image: observeinc/observe-agent:2.0.0
+    volumes:
+      - ./vm-agents/observe-agent.yaml:/etc/observe-agent/observe-agent.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/log:/var/log:ro
+      - /:/hostfs:ro
+    environment:
+      HOST_PROC: /hostfs/proc
+      HOST_SYS: /hostfs/sys
+      HOST_ETC: /hostfs/etc
+      HOST_VAR: /hostfs/var
+      HOST_RUN: /hostfs/run
+    restart: unless-stopped
 MONCOMPOSEEOF
 
 # Always start with monitoring overlay — .env has all needed vars
@@ -506,6 +568,8 @@ USER_DATA="${USER_DATA//__SNOWFLAKE_SCHEMA__/$SF_SCHEMA}"
 USER_DATA="${USER_DATA//__SPCS_MONITOR_ENDPOINT__/$MONITOR_PROM}"
 USER_DATA="${USER_DATA//__SPCS_MONITOR_LOKI_ENDPOINT__/$MONITOR_LOKI}"
 USER_DATA="${USER_DATA//__AWS_REGION__/$AWS_REGION}"
+USER_DATA="${USER_DATA//__OBSERVE_TOKEN__/$OBS_TOKEN}"
+USER_DATA="${USER_DATA//__OBSERVE_COLLECTION_URL__/$OBS_URL}"
 
 # ---------------------------------------------------------------------------
 # Step 4: Launch instance

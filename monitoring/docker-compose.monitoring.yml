@@ -13,6 +13,8 @@
 #   WORKER_LOCATION            — e.g. "gcp-us-central1" or "aws-us-east-1"
 #   WORKER_POOL                — e.g. "gcp-pool" or "aws-pool"
 #   DNS_RESOLVER               — DNS server (8.8.8.8 for GCP, 169.254.169.253 for AWS)
+#   OBSERVE_TOKEN              — Observe ingest token (written into observe-agent.yaml by setup script)
+#   OBSERVE_COLLECTION_URL     — e.g. https://175859677949.collect.observeinc.com/ (written into yaml)
 
 services:
   # ── Node Exporter — host metrics (CPU, memory, disk, network) ──────────
@@ -98,4 +100,26 @@ services:
       WORKER_POOL: "${WORKER_POOL:-unknown}"
     depends_on:
       - auth-proxy-monitor
+    restart: unless-stopped
+
+  # ── Observe Agent — dual-write telemetry to Observe (Snowflake) ────────
+  # Runs alongside the Grafana stack for side-by-side evaluation.
+  # Remove this service to stop sending data to Observe.
+  #
+  # NOTE: token and observe_url are baked into observe-agent.yaml at deploy
+  # time by the setup script. The agent does NOT read OBSERVE_TOKEN /
+  # OBSERVE_URL env vars — they must be literal values in the YAML config.
+  observe-agent:
+    image: observeinc/observe-agent:2.0.0
+    volumes:
+      - ./vm-agents/observe-agent.yaml:/etc/observe-agent/observe-agent.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/log:/var/log:ro
+      - /:/hostfs:ro
+    environment:
+      HOST_PROC: /hostfs/proc
+      HOST_SYS: /hostfs/sys
+      HOST_ETC: /hostfs/etc
+      HOST_VAR: /hostfs/var
+      HOST_RUN: /hostfs/run
     restart: unless-stopped
