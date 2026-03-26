@@ -6,7 +6,13 @@ FROM prefecthq/prefect:3-python3.12
 # Works with any HTTPS git provider (GitHub, GitLab, BitBucket, etc.).
 # Git is included in the prefect base image.
 
-RUN pip install --no-cache-dir "snowflake-connector-python>=3.6,<4"
+RUN pip install --no-cache-dir \
+    "snowflake-connector-python>=3.6,<4" \
+    opentelemetry-distro \
+    opentelemetry-exporter-otlp
+
+# Install all available auto-instrumentation packages
+RUN opentelemetry-bootstrap -a install
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD python -c "import prefect; print('ok')" || exit 1

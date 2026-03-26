@@ -155,6 +155,11 @@ if $BUILD_MONITORING; then
         -t "$REGISTRY/loki-backup:v1" \
         --load "$PROJECT_DIR/images"
     PUSH_LIST+=("loki-backup:v1")
+
+    echo "  Pulling + tagging observe-agent:2.0.0..."
+    docker pull --platform linux/amd64 observeinc/observe-agent:2.0.0
+    docker tag observeinc/observe-agent:2.0.0 "$REGISTRY/observe-agent:2.0.0"
+    PUSH_LIST+=("observe-agent:2.0.0")
 fi
 
 # ---------------------------------------------------------------------------

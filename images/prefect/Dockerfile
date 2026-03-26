@@ -12,6 +12,9 @@ COPY pyproject.toml .
 COPY src/ src/
 RUN uv sync --no-dev
 
+# Install OTel auto-instrumentation packages for all installed libraries
+RUN uv run opentelemetry-bootstrap -a install
+
 # uv venv is the runtime environment
 ENV PATH="/opt/prefect/.venv/bin:$PATH"
 

@@ -1,0 +1,38 @@
+# observe-agent-spcs.yaml — Observe Agent config for SPCS sidecar.
+# Runs as a container in PF_MONITOR to relay OTLP traces/metrics/logs
+# from other SPCS services to Observe's ingest endpoint.
+#
+# No host_monitoring or docker_stats — those don't apply inside SPCS.
+# O4S handles SPCS container metrics/logs via ACCOUNT_USAGE + Event Table.
+# This agent is purely an OTLP relay for APM traces from instrumented services.
+#
+# IMPORTANT: token and observe_url MUST be literal values — the observe-agent
+# does NOT read environment variables for authentication.
+
+token: "__OBSERVE_TOKEN__"
+observe_url: "__OBSERVE_URL__"
+
+# Accept OTLP traces/metrics/logs from other SPCS services
+forwarding:
+  enabled: true
+  metrics:
+    output_format: otel
+  endpoints:
+    grpc: 0.0.0.0:4317
+    http: 0.0.0.0:4318
+
+application:
+  RED_metrics:
+    enabled: true
+
+self_monitoring:
+  enabled: true
+  fleet:
+    enabled: true
+
+host_monitoring:
+  enabled: false
+
+resource_attributes:
+  service.name: prefect-spcs-observe-relay
+  deployment.environment.name: spcs

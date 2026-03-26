@@ -6,6 +6,7 @@ spec:
       # ALTER SERVICE ... FROM @PREFECT_SPECS SPECIFICATION_FILE = 'pf_worker.yaml';
       image: /prefect_db/prefect_schema/prefect_repository/prefect-worker:latest
       command:
+        - opentelemetry-instrument
         - prefect
         - worker
         - start
@@ -28,6 +29,12 @@ spec:
         GIT_BRANCH: "main"
         PREFECT_WORKER_WEBSERVER_HOST: "0.0.0.0"
         PREFECT_WORKER_WEBSERVER_PORT: "8080"
+        # OTel auto-instrumentation — traces sent to observe-agent in PF_MONITOR
+        OTEL_SERVICE_NAME: "prefect-worker-spcs"
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://pf-monitor:4317"
+        OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+        OTEL_RESOURCE_ATTRIBUTES: "deployment.environment.name=spcs,service.namespace=prefect"
+        OTEL_TRACES_SAMPLER: "parentbased_always_on"
       secrets:
         - snowflakeSecret:
             objectName: git_access_token

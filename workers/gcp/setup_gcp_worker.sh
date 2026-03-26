@@ -90,6 +90,7 @@ gcloud compute scp \
     "$REPO_ROOT/monitoring/vm-agents/prometheus-agent.yml" \
     "$REPO_ROOT/monitoring/vm-agents/promtail-config.yaml" \
     "$REPO_ROOT/monitoring/vm-agents/nginx-monitor.conf" \
+    "$REPO_ROOT/monitoring/vm-agents/observe-agent.yaml" \
     "$VM_NAME:/opt/prefect-gcp/vm-agents/" \
     --project="$PROJECT" \
     --zone="$ZONE"

@@ -249,6 +249,27 @@ spec:
         - name: loki-data
           mountPath: /loki
 
+    # ── Observe Agent — OTLP relay for APM traces to Observe ───────────
+    # Accepts OTLP gRPC (4317) and HTTP (4318) from other SPCS services.
+    # Forwards traces/metrics/logs to Observe's ingest endpoint.
+    # Other services reach this at pf-monitor:4317 via SPCS internal DNS.
+    # Config is mounted from stage with token/URL baked in at deploy time.
+    - name: observe-agent
+      image: /prefect_db/prefect_schema/prefect_repository/observe-agent:2.0.0
+      resources:
+        requests:
+          cpu: 0.1
+          memory: 128M
+        limits:
+          cpu: 0.2
+          memory: 256M
+      volumeMounts:
+        - name: observe-config
+          mountPath: /etc/observe-agent
+      readinessProbe:
+        port: 4317
+        path: /
+
   endpoints:
     # Grafana UI — public
     - name: grafana
@@ -262,6 +283,9 @@ spec:
     - name: loki
       port: 3100
       public: true
+    # OTLP gRPC — internal only (SPCS services send traces here)
+    - name: otlp
+      port: 4317
 
   volumes:
     # Prometheus config — mounted from stage (v2 syntax)
@@ -318,6 +342,13 @@ spec:
       size: 20Gi
       uid: 10001
       gid: 10001
+    # Observe Agent config — mounted from stage (token/URL baked in at deploy time)
+    - name: observe-config
+      source: stage
+      stageConfig:
+        name: "@PREFECT_DB.PREFECT_SCHEMA.MONITOR_STAGE/observe-agent"
+      uid: 0
+      gid: 0
 
   platformMonitor:
     metricConfig:

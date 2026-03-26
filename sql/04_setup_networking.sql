@@ -41,3 +41,11 @@ CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS PREFECT_DASHBOARD_EAI
     ENABLED = TRUE;
 
 GRANT USAGE ON INTEGRATION PREFECT_DASHBOARD_EAI TO ROLE PREFECT_ROLE;
+
+-- ---------------------------------------------------------------------------
+-- Observe Agent — EAI for OTLP trace/metric egress to Observe ingest endpoint
+-- ---------------------------------------------------------------------------
+-- The network rule and EAI are created in SEND_TO_OBSERVE.O4S by the O4S
+-- setup (see monitoring/o4s/ docs). Here we just grant usage to PREFECT_ROLE
+-- so PF_MONITOR can reference OBSERVE_INGEST_ACCESS_INTEGRATION.
+GRANT USAGE ON INTEGRATION OBSERVE_INGEST_ACCESS_INTEGRATION TO ROLE PREFECT_ROLE;

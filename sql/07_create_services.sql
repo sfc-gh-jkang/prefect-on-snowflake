@@ -69,16 +69,18 @@ EXECUTE JOB SERVICE
     FROM @PREFECT_SPECS
     SPECIFICATION_FILE = 'pf_deploy_job.yaml';
 
--- 7. Monitoring stack (Prometheus + Grafana + Loki + exporters)
+-- 7. Monitoring stack (Prometheus + Grafana + Loki + exporters + Observe Agent)
 --    Requires PREFECT_PG_EAI to reach Snowflake Managed Postgres for
 --    postgres-exporter metrics and Grafana's persistent database.
+--    Requires OBSERVE_INGEST_ACCESS_INTEGRATION for observe-agent to
+--    forward OTLP traces/metrics to Observe's ingest endpoint.
 CREATE SERVICE IF NOT EXISTS PF_MONITOR
     IN COMPUTE POOL PREFECT_MONITOR_POOL
     FROM @MONITOR_STAGE
     SPECIFICATION_FILE = 'specs/pf_monitor.yaml'
     MIN_INSTANCES = 1
     MAX_INSTANCES = 1
-    EXTERNAL_ACCESS_INTEGRATIONS = (PREFECT_PG_EAI);
+    EXTERNAL_ACCESS_INTEGRATIONS = (PREFECT_PG_EAI, OBSERVE_INGEST_ACCESS_INTEGRATION);
 
 -- Show all services
 SHOW SERVICES IN SCHEMA PREFECT_DB.PREFECT_SCHEMA;
