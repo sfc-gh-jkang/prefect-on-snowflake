@@ -219,8 +219,26 @@ snow sql -f sql/06_setup_image_repo.sql --connection <conn>
 - **Loki ruler `alertmanager_client` YAML structure:** The `NotifierConfig` Go struct uses `yaml:",inline"` for `BasicAuth`, meaning fields must be flat (`basic_auth_username`, `basic_auth_password`) at the `alertmanager_client` level — NOT nested as `basic_auth.username`.
 - **SPCS volume mount caching:** When a container crashes repeatedly after a spec change, SPCS may keep using the cached volume mount from the original start. `snow spcs service upgrade` alone may not force a refresh. Use `ALTER SERVICE ... SUSPEND` then `ALTER SERVICE ... RESUME` to force a clean restart with fresh volume mounts.
 - **OCSP warnings in SPCS containers:** Snowflake Python connector tries OCSP certificate revocation checks but SPCS containers cannot reach external OCSP responders (e.g. `ocsp.digicert.com`). This floods logs with OCSP warnings. Fix: set `insecure_mode=True` on the connector — the connection is internal to Snowflake infra so OCSP is unnecessary.
-- **cAdvisor NaN metrics on VM agents:** cAdvisor reports metrics for all cgroups, but host-level cgroups (systemd services, slices) without resource limits produce NaN values that Prometheus rejects as "out of order sample". Fix: add `metric_relabel_configs` rules in `prometheus-agent.yml` to drop non-Docker cgroups (`.service`, `.slice`, `/user.slice`, `/init.scope`) while keeping Docker container scopes at `/system.slice/docker-*.scope`. Note: Prometheus uses RE2 regex — Perl syntax like `(?!...)` is not supported.
+- **cAdvisor NaN metrics on VM agents:** cAdvisor reports metrics for all cgroups, but host-level cgroups (systemd services, slices, root `/`) without resource limits produce NaN values that Prometheus rejects as "out of order sample". Fix: run cAdvisor with `--docker_only=true --disable_root_cgroup_stats=true` so it only reports Docker container metrics. This is configured in `docker-compose.monitoring.yml`.
 - **`snow stage copy` path gotcha:** `snow stage copy file.yaml "@STAGE/specs/file.yaml"` creates a *directory* named `file.yaml` with the file inside it (nested path). Use `"@STAGE/specs/"` (trailing slash, no filename) so the file lands at `specs/file.yaml`. This matters for `ALTER SERVICE ... SPECIFICATION_FILE` which reads a fixed path.
+
+**Observability stack upgrade path:**
+
+The current stack (Prometheus + Loki + Grafana + prometheus-agent + promtail) is sized for a single-org SE demo. Here's when and why to upgrade each component:
+
+| Current | Upgrade to | When to upgrade |
+|---------|-----------|-----------------|
+| SPCS Prometheus (single node) | **Grafana Mimir** | Multiple VM agents writing metrics, need HA/multi-tenancy, long-term retention (months), or out-of-order ingestion tolerance |
+| prometheus-agent + promtail (2 containers per VM) | **Grafana Alloy** (1 container) | Want fewer sidecars, need OpenTelemetry (OTLP) support, or want programmable pipelines in one config |
+| Loki (single node, local storage) | **Loki with S3/GCS backend** | Log retention exceeds local disk, need multi-tenant log ingestion |
+| No tracing | **Grafana Tempo** | Need request-level latency debugging across Prefect Server → Worker → Snowflake → external APIs |
+
+**Component details:**
+
+- **Grafana Mimir** — Horizontally scalable, long-term Prometheus-compatible metrics backend. Drop-in replacement for Prometheus TSDB. Key advantage: handles out-of-order sample ingestion natively (configurable `out_of_order_time_window`), which eliminates the WAL replay errors we see after prometheus-agent restarts. Requires object storage (S3/GCS) for blocks.
+- **Grafana Alloy** — Unified telemetry collector that replaces prometheus-agent (metrics), promtail (logs), and OpenTelemetry Collector (traces) with a single binary. Uses a programmable pipeline config (River language) for filtering, relabeling, and routing. Reduces VM sidecar count from 2 to 1.
+- **Grafana Tempo** — Distributed tracing backend backed by object storage. Stores traces (not metrics or logs). Useful for debugging flow run latency across service boundaries. Integrates with Grafana for trace-to-logs and trace-to-metrics correlation. Only valuable if services are instrumented with OpenTelemetry spans.
+- **Prometheus Agent Mode** — What we currently run on VM workers. Scrapes local targets and remote_writes to a central receiver. No local query engine or storage. The right choice when the VM is a leaf node that forwards metrics elsewhere.
 
 ### Hybrid Worker (GCP)
 
