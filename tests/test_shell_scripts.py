@@ -183,14 +183,14 @@ class TestDeployScript:
         assert "08_validate.sql" in content
 
     def test_has_wait_for_ready_function(self, script_files):
-        """deploy.sh must poll SYSTEM$GET_SERVICE_STATUS after ALTER SERVICE."""
+        """deploy.sh must poll service status after ALTER SERVICE."""
         content = script_files["deploy.sh"]
         assert "wait_for_ready" in content
 
     def test_polls_service_status(self, script_files):
-        """deploy.sh must use SYSTEM$GET_SERVICE_STATUS for readiness polling."""
-        content = script_files["deploy.sh"]
-        assert "SYSTEM$GET_SERVICE_STATUS" in content or "GET_SERVICE_STATUS" in content
+        """deploy.sh must use SHOW SERVICES for readiness polling (via _lib.sh)."""
+        content = script_files.get("_lib.sh", "") + script_files["deploy.sh"]
+        assert "SHOW SERVICES" in content or "SHOW_SERVICES" in content
 
     def test_update_branch_polls_all_four_services(self, script_files):
         """The update branch must poll READY for all 4 long-running services."""
@@ -773,9 +773,9 @@ class TestUpdateVersionsScript:
         assert "wait_for_ready" in content
 
     def test_polls_service_status(self, script_files):
-        """update_versions.sh must use SYSTEM$GET_SERVICE_STATUS for polling (directly or via _lib.sh)."""
+        """update_versions.sh must use SHOW SERVICES for polling (directly or via _lib.sh)."""
         content = script_files.get("_lib.sh", "") + script_files["update_versions.sh"]
-        assert "SYSTEM$GET_SERVICE_STATUS" in content or "GET_SERVICE_STATUS" in content
+        assert "SHOW SERVICES" in content or "SHOW_SERVICES" in content
 
     def test_polls_all_four_services(self, script_files):
         """Every ALTER SERVICE must be followed by a wait_for_ready call."""

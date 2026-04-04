@@ -152,7 +152,7 @@ if ${UPDATE_MODE}; then
     if ${POLL_FAILED}; then
         echo ""
         echo "WARNING: Some services did not reach READY. Check status manually:"
-        echo "  snow sql -q \"SELECT SYSTEM\$GET_SERVICE_STATUS('<service>')\" --connection ${CONN}"
+        echo "  snow sql -q \"SHOW SERVICES LIKE '<service>' IN SCHEMA PREFECT_DB.PREFECT_SCHEMA\" --connection ${CONN}"
     fi
 
     echo ""

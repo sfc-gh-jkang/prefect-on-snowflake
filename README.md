@@ -2,6 +2,13 @@
 
 Production-grade, self-hosted Prefect orchestration server running entirely on SPCS with hybrid worker support for multi-cloud execution.
 
+## Blog Posts
+
+<!-- TODO: Replace URLs with actual Medium links after publishing -->
+- [Running Prefect 3.x on Snowflake — Self-Hosted Orchestration Without Prefect Cloud](https://medium.com/@johnkangw/running-prefect-3-x-on-snowflake-self-hosted-orchestration-without-prefect-cloud-cf30715b78ad)
+- [13 Gotchas I Hit Building Observability for Prefect on Snowflake SPCS](TODO_MEDIUM_URL_PART1) — Part 1: tactical Observe implementation guide
+- [Why I Chose Observe Over Datadog, Grafana, and Splunk for SPCS Observability](TODO_MEDIUM_URL_PART2) — Part 2: platform comparison and AI capabilities
+
 ## Architecture
 
 ```
@@ -483,7 +490,7 @@ prefect-spcs/
 │       ├── variables.tf        # Customer ID, API token, thresholds
 │       ├── terraform.tfvars.example  # Credentials template
 │       ├── data.tf             # Dataset references (O4S + OTel)
-│       ├── dashboards.tf       # 5 dashboards (SPCS, APM, warehouse, cost, login)
+│       ├── dashboards.tf       # 11 dashboards (SPCS, APM, warehouse, cost, login + infra, prefect-app, postgres, redis, VM, logs)
 │       ├── monitors.tf         # 4 monitors (credit spike, long query, heartbeat, idle cost)
 │       └── outputs.tf          # Dashboard URLs + monitor names
 └── tests/                      # Test suite (2300+ offline tests)
@@ -1942,10 +1949,9 @@ snow sql -q "
     USING ('@PREFECT_SPECS');
 " --connection my_connection
 
-# 3. Wait for READY status
+# 3. Wait for RUNNING status
 snow sql -q "
-  USE ROLE PREFECT_ROLE; USE DATABASE PREFECT_DB; USE SCHEMA PREFECT_SCHEMA;
-  SELECT SYSTEM$GET_SERVICE_STATUS('PF_SERVER');
+  SHOW SERVICES LIKE 'PF_SERVER' IN SCHEMA PREFECT_DB.PREFECT_SCHEMA;
 " --connection my_connection
 
 # 4. Check if the endpoint changed
@@ -2824,6 +2830,12 @@ terraform apply
 | Dashboard | Warehouse & Query Performance | Credit usage by warehouse, query duration, error volume |
 | Dashboard | Cost & Metering Overview | Daily credits by service type, task run counts |
 | Dashboard | Login & Security Activity | Login volume, failed login attempts, client types |
+| Dashboard | Infrastructure Health | Service up/down, CPU, memory, Redis memory, Postgres connections (Prometheus) |
+| Dashboard | Prefect Application | Flow run states, success rate, active workers, deployments (Prometheus) |
+| Dashboard | PostgreSQL Detail | Tuple operations, dead tuples, cache hit ratio, connections (Prometheus) |
+| Dashboard | Redis Detail | Memory usage, cache hit rate, network I/O, connected clients (Prometheus) |
+| Dashboard | VM Workers | Node-exporter CPU, memory, disk, network I/O (Prometheus) |
+| Dashboard | Logs Explorer | Log volume over time, logs by source, error stream (Loki) |
 | Monitor | SPCS Daily Credit Spike | Alert when daily SPCS credits exceed threshold (default: 50) |
 | Monitor | Long-Running Queries | Alert when queries exceed 30 minutes |
 | Monitor | Prefect Worker Heartbeat Missing | Alert when no OTel spans for 10 minutes |
@@ -3075,6 +3087,84 @@ terraform apply
   via `customer` (customer ID) + `api_token` (API key, not ingest token). SSO users
   (Google, Okta) cannot use email/password auth — they must generate an API token from
   Settings → Account → API Keys.
+
+- **NEVER use explicit `timechart` bucket sizes** (e.g., `timechart 5m`): This causes
+  "Missing/Invalid X or Y field" rendering errors in dashboard panels. Always use
+  `timechart options(empty_bins:true)` without a bucket size — let Observe auto-bucket
+  based on the dashboard time range. This was the root cause of persistent panel failures
+  across multiple dashboards.
+
+- **OPAL functions that FAIL silently in dashboards**: `case()`, `percentile()`, `isnull()`,
+  `int64()`, `flatten_all` — all cause rendering failures or X/Y field errors. Use `if()`
+  for conditionals, `filter not isnull(x)` for null handling, and `float64()` for casting.
+
+- **OPAL null handling**: `string()` cast of a null field returns null (not empty string).
+  `if(x = "", fallback, x)` does NOT catch null — the series label shows as "null" in the
+  chart. When a field is null for all records, use a literal string instead:
+  `make_col OBSERVATION_KIND:"my_label"`.
+
+- **Confirmed working dashboard stage pattern**:
+  1. Stage `layout.type` = `"table"`, manager `type` = `"Vis"`
+  2. No ExpressionBuilder — just InputStep + OPAL step
+  3. OPAL uses `make_col OBSERVATION_KIND:<group_col>` then `group_by(OBSERVATION_KIND)`
+  4. `vegaVis.color` = `"OBSERVATION_KIND"` for multi-series grouping
+  5. Only `LineChart` type works — `BarChart` causes X/Y errors
+  6. `timechart options(empty_bins:true)` with auto-bucket (NEVER explicit sizes)
+  7. `layout` must be a JSON object (not a stringified JSON string)
+
+- **OBSERVATION_KIND values in the raw dataset**: `prometheus` (remote_write metrics),
+  `prom_md` (Prometheus metadata), `otelspan` (OTel traces), `otellogs` (OTel logs —
+  **PLURAL**, not "otellog"), `http` (HTTP collect endpoint data).
+
+- **Prometheus metric field paths**: metric name = `string(EXTRA."__name__")`,
+  value = `float64(FIELDS.value)`, job label = `string(EXTRA.job)`.
+
+- **11 Observe dashboards** (all rendering, deployed via Terraform):
+
+  | Dashboard | ID | Data Source | Panels |
+  |-----------|-----|------------|--------|
+  | Infrastructure Health | 42991201 | prometheus | 6: service up, CPU, memory, disk I/O, network, FDs |
+  | Worker APM | 42987650 | prometheus | 4: span count, duration, error rate, throughput |
+  | Prefect Application | 42991198 | prometheus | 4: CPU rate, memory, FDs, worker heartbeat |
+  | PostgreSQL Detail | 42991200 | prometheus | 4: connections, transactions, cache hit, DB size |
+  | Redis Detail | 42991199 | prometheus | 4: commands, memory, connections, keyspace |
+  | VM Workers | 42991197 | prometheus | 4: CPU, memory, FDs, service availability |
+  | Logs Explorer | 42991813 | otellogs | 3: log volume, events by type, total logs |
+  | SPCS Overview | 42987647 | O4S | SPCS service metrics |
+  | Cost & Metering | 42987649 | O4S | Credit usage and metering |
+  | Login & Security | 42987648 | O4S | Auth events and security |
+  | Warehouse Performance | 42987651 | O4S | Query and warehouse metrics |
+
+- **Why OPAL dashboard pipelines are hard to debug**: OPAL has a "dashboard subset" of
+  valid syntax that is narrower than the explorer's full syntax, and Observe provides no
+  error feedback about what's in or out. Key lessons from 20+ debugging iterations:
+
+  1. **Silent failures**: Dashboard panels show generic "Missing/Invalid X or Y field" for
+     every type of OPAL error — no line numbers, no function names, no hints. You cannot
+     distinguish layout problems from OPAL syntax issues from missing metrics.
+
+  2. **Dashboard OPAL != Explorer OPAL**: `timechart 5m`, `case()`, `percentile()`,
+     `isnull()`, `int64()` all work in the dataset explorer but silently break dashboard
+     rendering. This is not documented.
+
+  3. **Layout vs content red herring**: Errors appear to move with grid position when you
+     swap panels, making it look like a layout bug. But the error follows the OPAL pipeline,
+     not the grid slot.
+
+  4. **Compound failures**: Panels rarely have one problem. A typical broken panel has an
+     explicit timechart bucket size AND a banned function AND a null field AND a missing
+     metric. Each fix reveals the next problem.
+
+  5. **No programmatic query API**: Cannot test OPAL outside of a deployed dashboard. Each
+     iteration requires a 30-60 second Terraform deploy cycle.
+
+  6. **Rapid deploys corrupt state**: The platform caches stale state during rapid iteration.
+     Fix: `terraform destroy` then `terraform apply` to force clean recreation.
+
+  7. **Methodology that works**: Start with known-working metrics (`up`), use literal
+     OBSERVATION_KIND strings, never use explicit timechart bucket sizes, test one panel at
+     a time, use 7-day time ranges for initial testing, always check the OPAL first (not
+     the layout), destroy and recreate if panels show blank despite correct OPAL.
 
 ## Completed Milestones
 

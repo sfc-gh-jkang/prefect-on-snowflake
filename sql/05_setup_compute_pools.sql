@@ -8,6 +8,7 @@ CREATE COMPUTE POOL IF NOT EXISTS PREFECT_INFRA_POOL
     MIN_NODES = 1
     MAX_NODES = 1
     INSTANCE_FAMILY = CPU_X64_S
+    AUTO_SUSPEND_SECS = 3600
     COMMENT = 'Prefect infrastructure: PostgreSQL and Redis';
 
 -- Core pool: prefect-server + prefect-services
@@ -15,6 +16,7 @@ CREATE COMPUTE POOL IF NOT EXISTS PREFECT_CORE_POOL
     MIN_NODES = 1
     MAX_NODES = 2
     INSTANCE_FAMILY = CPU_X64_M
+    AUTO_SUSPEND_SECS = 3600
     COMMENT = 'Prefect core: API server and background services';
 
 -- Worker pool: prefect-worker (scales independently)
@@ -22,6 +24,7 @@ CREATE COMPUTE POOL IF NOT EXISTS PREFECT_WORKER_POOL
     MIN_NODES = 1
     MAX_NODES = 3
     INSTANCE_FAMILY = CPU_X64_S
+    AUTO_SUSPEND_SECS = 3600
     COMMENT = 'Prefect worker: flow execution';
 
 -- Dashboard pool: observability dashboard (isolated from monitored services)
@@ -29,6 +32,7 @@ CREATE COMPUTE POOL IF NOT EXISTS PREFECT_DASHBOARD_POOL
     MIN_NODES = 1
     MAX_NODES = 1
     INSTANCE_FAMILY = CPU_X64_XS
+    AUTO_SUSPEND_SECS = 3600
     COMMENT = 'Observability dashboard: isolated from Prefect workload pools';
 
 GRANT USAGE, MONITOR ON COMPUTE POOL PREFECT_INFRA_POOL TO ROLE PREFECT_ROLE;
