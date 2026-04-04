@@ -12,9 +12,9 @@ output "dashboard_urls" {
 output "monitor_names" {
   description = "Observe monitor names"
   value = {
-    spcs_credit_spike    = observe_monitor_v2.spcs_credit_spike.name
+    spcs_credit_spike   = observe_monitor_v2.spcs_credit_spike.name
     long_running_queries = observe_monitor_v2.long_running_queries.name
-    worker_heartbeat     = observe_monitor_v2.worker_heartbeat.name
-    warehouse_idle_cost  = observe_monitor_v2.warehouse_idle_cost.name
+    worker_heartbeat    = observe_monitor_v2.worker_heartbeat.name
+    warehouse_idle_cost = observe_monitor_v2.warehouse_idle_cost.name
   }
 }

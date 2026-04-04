@@ -3087,3 +3087,10 @@ All planned features have been implemented:
 - **Monitoring**: Streamlit dashboard (7 pages), Prometheus + Grafana (9 dashboards) + Loki stack, Prefect automations, email + Slack alerts
 - **Operations**: FlowSpec validation CLI, deployment diff/audit, version management, cost attribution via `QUERY_TAG`, operations runbook, load testing, cost analysis, pool scheduling
 - **Business Flows**: Data quality checks, stage cleanup, infrastructure health checks
+
+## Repository Owner
+
+- **Owner:** John Kang (john.kang@snowflake.com / [@sfc-gh-jkang](https://github.com/sfc-gh-jkang))
+- **Access requests:** Open a [CASEC Jira](https://snowflakecomputing.atlassian.net/) for access changes
+- **License:** Apache-2.0
+
