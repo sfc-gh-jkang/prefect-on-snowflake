@@ -1,0 +1,120 @@
+{
+  "autoPack": true,
+  "gridLayout": {
+    "sections": [
+      {
+        "card": {
+          "title": "Service Health",
+          "closed": false,
+          "cardType": "section"
+        },
+        "items": [
+          {
+            "card": {
+              "stageId": "stage-infra-service-up",
+              "cardType": "stage"
+            },
+            "layout": {
+              "h": 15,
+              "w": 12,
+              "x": 0,
+              "y": 0
+            }
+          }
+        ]
+      },
+      {
+        "card": {
+          "title": "CPU & Memory",
+          "closed": false,
+          "cardType": "section"
+        },
+        "items": [
+          {
+            "card": {
+              "stageId": "stage-infra-cpu",
+              "cardType": "stage"
+            },
+            "layout": {
+              "h": 15,
+              "w": 6,
+              "x": 0,
+              "y": 0
+            }
+          },
+          {
+            "card": {
+              "stageId": "stage-infra-memory",
+              "cardType": "stage"
+            },
+            "layout": {
+              "h": 15,
+              "w": 6,
+              "x": 6,
+              "y": 0
+            }
+          }
+        ]
+      },
+      {
+        "card": {
+          "title": "Redis & Postgres",
+          "closed": false,
+          "cardType": "section"
+        },
+        "items": [
+          {
+            "card": {
+              "stageId": "stage-infra-redis-mem",
+              "cardType": "stage"
+            },
+            "layout": {
+              "h": 15,
+              "w": 4,
+              "x": 0,
+              "y": 0
+            }
+          },
+          {
+            "card": {
+              "stageId": "stage-infra-pg-conns",
+              "cardType": "stage"
+            },
+            "layout": {
+              "h": 15,
+              "w": 4,
+              "x": 4,
+              "y": 0
+            }
+          },
+          {
+            "card": {
+              "stageId": "stage-infra-redis-cmds",
+              "cardType": "stage"
+            },
+            "layout": {
+              "h": 15,
+              "w": 4,
+              "x": 8,
+              "y": 0
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "stageListLayout": {
+    "timeRange": {
+      "display": "Past 24 hours",
+      "endTime": null,
+      "startTime": null,
+      "timeRangeInfo": {
+        "key": "PRESETS",
+        "name": "Presets",
+        "presetType": "PAST_24_HOURS"
+      },
+      "originalDisplay": "Past 24 hours",
+      "millisFromCurrentTime": 86400000
+    }
+  }
+}

@@ -1,20 +1,20 @@
 [
   {
-    "id": "stage-apm-latency",
-    "pipeline": "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name), duration_ms:float64(int64(FIELDS.span.end_time_unix_nano)-int64(FIELDS.span.start_time_unix_nano))/1000000.0\nfilter int64(FIELDS.span.kind) = 2 or int64(FIELDS.span.kind) = 3\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_avg_duration:avg(duration_ms), group_by(OBSERVATION_KIND)",
+    "id": "stage-redis-memory",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value)\nfilter metric_name = \"redis_memory_used_bytes\"\nmake_col metric_value_mb:metric_value/1048576\ntimechart options(empty_bins:true), A_redis_mem:avg(metric_value_mb)",
     "input": [
       {
         "datasetId": "${otel_raw_dataset_id}",
-        "inputName": "OTel Raw",
+        "inputName": "prefect-spcs-observe-agent",
         "inputRole": "Data"
       }
     ],
     "layout": {
       "type": "table",
-      "label": "Avg Span Duration by Operation (ms)",
+      "label": "Redis Memory Usage (MB)",
       "steps": [
         {
-          "id": "si-stage-apm-latency",
+          "id": "si-stage-redis-memory",
           "opal": [],
           "type": "InputStep",
           "index": 0,
@@ -23,9 +23,9 @@
           "customSummary": ""
         },
         {
-          "id": "se-stage-apm-latency",
+          "id": "se-stage-redis-memory",
           "opal": [
-            "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name), duration_ms:float64(int64(FIELDS.span.end_time_unix_nano)-int64(FIELDS.span.start_time_unix_nano))/1000000.0\nfilter int64(FIELDS.span.kind) = 2 or int64(FIELDS.span.kind) = 3\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_avg_duration:avg(duration_ms), group_by(OBSERVATION_KIND)"
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value)\nfilter metric_name = \"redis_memory_used_bytes\"\nmake_col metric_value_mb:metric_value/1048576\ntimechart options(empty_bins:true), A_redis_mem:avg(metric_value_mb)"
           ],
           "type": "unknown",
           "index": 1,
@@ -35,12 +35,12 @@
       ],
       "managers": [
         {
-          "id": "v-stage-apm-latency",
+          "id": "v-stage-redis-memory",
           "type": "Vis",
           "vegaVis": {
             "x": "_c_valid_from",
             "y": [
-              "A_avg_duration"
+              "A_redis_mem"
             ],
             "type": "LineChart",
             "legend": {
@@ -62,8 +62,7 @@
             },
             "lineConfig": {
               "areaFillType": "TranslucentFill"
-            },
-            "color": "OBSERVATION_KIND"
+            }
           },
           "isDisabled": false
         }
@@ -75,21 +74,21 @@
     }
   },
   {
-    "id": "stage-apm-throughput",
-    "pipeline": "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name)\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_span_count:count(1), group_by(OBSERVATION_KIND)",
+    "id": "stage-redis-commands",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value)\nfilter metric_name = \"redis_commands_processed_total\"\ntimechart options(empty_bins:true), A_redis_cmds:rate(metric_value)",
     "input": [
       {
         "datasetId": "${otel_raw_dataset_id}",
-        "inputName": "OTel Raw",
+        "inputName": "prefect-spcs-observe-agent",
         "inputRole": "Data"
       }
     ],
     "layout": {
       "type": "table",
-      "label": "Span Throughput by Operation",
+      "label": "Redis Commands/sec",
       "steps": [
         {
-          "id": "si-stage-apm-throughput",
+          "id": "si-stage-redis-commands",
           "opal": [],
           "type": "InputStep",
           "index": 0,
@@ -98,9 +97,9 @@
           "customSummary": ""
         },
         {
-          "id": "se-stage-apm-throughput",
+          "id": "se-stage-redis-commands",
           "opal": [
-            "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name)\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_span_count:count(1), group_by(OBSERVATION_KIND)"
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value)\nfilter metric_name = \"redis_commands_processed_total\"\ntimechart options(empty_bins:true), A_redis_cmds:rate(metric_value)"
           ],
           "type": "unknown",
           "index": 1,
@@ -110,12 +109,12 @@
       ],
       "managers": [
         {
-          "id": "v-stage-apm-throughput",
+          "id": "v-stage-redis-commands",
           "type": "Vis",
           "vegaVis": {
             "x": "_c_valid_from",
             "y": [
-              "A_span_count"
+              "A_redis_cmds"
             ],
             "type": "LineChart",
             "legend": {
@@ -137,8 +136,7 @@
             },
             "lineConfig": {
               "areaFillType": "TranslucentFill"
-            },
-            "color": "OBSERVATION_KIND"
+            }
           },
           "isDisabled": false
         }
@@ -150,21 +148,21 @@
     }
   },
   {
-    "id": "stage-apm-errors",
-    "pipeline": "filter OBSERVATION_KIND = \"otelspan\"\nmake_col status_code:string(int64(FIELDS.span.status.code))\nmake_col OBSERVATION_KIND:if(status_code = \"2\", \"ERROR\", if(status_code = \"1\", \"OK\", \"UNSET\"))\ntimechart options(empty_bins:true), A_status_count:count(1), group_by(OBSERVATION_KIND)",
+    "id": "stage-redis-connections",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value)\nfilter metric_name = \"redis_connected_clients\"\ntimechart options(empty_bins:true), A_redis_clients:avg(metric_value)",
     "input": [
       {
         "datasetId": "${otel_raw_dataset_id}",
-        "inputName": "OTel Raw",
+        "inputName": "prefect-spcs-observe-agent",
         "inputRole": "Data"
       }
     ],
     "layout": {
       "type": "table",
-      "label": "Spans by Status Code",
+      "label": "Redis Connected Clients",
       "steps": [
         {
-          "id": "si-stage-apm-errors",
+          "id": "si-stage-redis-connections",
           "opal": [],
           "type": "InputStep",
           "index": 0,
@@ -173,9 +171,9 @@
           "customSummary": ""
         },
         {
-          "id": "se-stage-apm-errors",
+          "id": "se-stage-redis-connections",
           "opal": [
-            "filter OBSERVATION_KIND = \"otelspan\"\nmake_col status_code:string(int64(FIELDS.span.status.code))\nmake_col OBSERVATION_KIND:if(status_code = \"2\", \"ERROR\", if(status_code = \"1\", \"OK\", \"UNSET\"))\ntimechart options(empty_bins:true), A_status_count:count(1), group_by(OBSERVATION_KIND)"
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value)\nfilter metric_name = \"redis_connected_clients\"\ntimechart options(empty_bins:true), A_redis_clients:avg(metric_value)"
           ],
           "type": "unknown",
           "index": 1,
@@ -185,12 +183,12 @@
       ],
       "managers": [
         {
-          "id": "v-stage-apm-errors",
+          "id": "v-stage-redis-connections",
           "type": "Vis",
           "vegaVis": {
             "x": "_c_valid_from",
             "y": [
-              "A_status_count"
+              "A_redis_clients"
             ],
             "type": "LineChart",
             "legend": {
@@ -212,8 +210,7 @@
             },
             "lineConfig": {
               "areaFillType": "TranslucentFill"
-            },
-            "color": "OBSERVATION_KIND"
+            }
           },
           "isDisabled": false
         }
@@ -225,21 +222,21 @@
     }
   },
   {
-    "id": "stage-apm-top-spans",
-    "pipeline": "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name), duration_ms:float64(int64(FIELDS.span.end_time_unix_nano)-int64(FIELDS.span.start_time_unix_nano))/1000000.0\nfilter int64(FIELDS.span.kind) = 2 or int64(FIELDS.span.kind) = 3\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_max_duration:max(duration_ms), group_by(OBSERVATION_KIND)",
+    "id": "stage-redis-keys",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value)\nfilter metric_name = \"redis_db_keys\"\ntimechart options(empty_bins:true), A_redis_keys:avg(metric_value)",
     "input": [
       {
         "datasetId": "${otel_raw_dataset_id}",
-        "inputName": "OTel Raw",
+        "inputName": "prefect-spcs-observe-agent",
         "inputRole": "Data"
       }
     ],
     "layout": {
       "type": "table",
-      "label": "Max Latency by Operation (ms)",
+      "label": "Redis Total Keys",
       "steps": [
         {
-          "id": "si-stage-apm-top-spans",
+          "id": "si-stage-redis-keys",
           "opal": [],
           "type": "InputStep",
           "index": 0,
@@ -248,9 +245,9 @@
           "customSummary": ""
         },
         {
-          "id": "se-stage-apm-top-spans",
+          "id": "se-stage-redis-keys",
           "opal": [
-            "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name), duration_ms:float64(int64(FIELDS.span.end_time_unix_nano)-int64(FIELDS.span.start_time_unix_nano))/1000000.0\nfilter int64(FIELDS.span.kind) = 2 or int64(FIELDS.span.kind) = 3\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_max_duration:max(duration_ms), group_by(OBSERVATION_KIND)"
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value)\nfilter metric_name = \"redis_db_keys\"\ntimechart options(empty_bins:true), A_redis_keys:avg(metric_value)"
           ],
           "type": "unknown",
           "index": 1,
@@ -260,12 +257,12 @@
       ],
       "managers": [
         {
-          "id": "v-stage-apm-top-spans",
+          "id": "v-stage-redis-keys",
           "type": "Vis",
           "vegaVis": {
             "x": "_c_valid_from",
             "y": [
-              "A_max_duration"
+              "A_redis_keys"
             ],
             "type": "LineChart",
             "legend": {
@@ -287,8 +284,7 @@
             },
             "lineConfig": {
               "areaFillType": "TranslucentFill"
-            },
-            "color": "OBSERVATION_KIND"
+            }
           },
           "isDisabled": false
         }

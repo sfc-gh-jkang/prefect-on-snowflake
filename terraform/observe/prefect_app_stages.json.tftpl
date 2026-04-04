@@ -1,20 +1,20 @@
 [
   {
-    "id": "stage-apm-latency",
-    "pipeline": "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name), duration_ms:float64(int64(FIELDS.span.end_time_unix_nano)-int64(FIELDS.span.start_time_unix_nano))/1000000.0\nfilter int64(FIELDS.span.kind) = 2 or int64(FIELDS.span.kind) = 3\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_avg_duration:avg(duration_ms), group_by(OBSERVATION_KIND)",
+    "id": "stage-prefect-flow-runs",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), job:string(EXTRA.job)\nfilter metric_name = \"process_cpu_seconds_total\"\nmake_col OBSERVATION_KIND:job\ntimechart options(empty_bins:true), A_flow_runs:rate(metric_value), group_by(OBSERVATION_KIND)",
     "input": [
       {
         "datasetId": "${otel_raw_dataset_id}",
-        "inputName": "OTel Raw",
+        "inputName": "prefect-spcs-observe-agent",
         "inputRole": "Data"
       }
     ],
     "layout": {
       "type": "table",
-      "label": "Avg Span Duration by Operation (ms)",
+      "label": "Prefect CPU Rate by Job",
       "steps": [
         {
-          "id": "si-stage-apm-latency",
+          "id": "si-stage-prefect-flow-runs",
           "opal": [],
           "type": "InputStep",
           "index": 0,
@@ -23,9 +23,9 @@
           "customSummary": ""
         },
         {
-          "id": "se-stage-apm-latency",
+          "id": "se-stage-prefect-flow-runs",
           "opal": [
-            "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name), duration_ms:float64(int64(FIELDS.span.end_time_unix_nano)-int64(FIELDS.span.start_time_unix_nano))/1000000.0\nfilter int64(FIELDS.span.kind) = 2 or int64(FIELDS.span.kind) = 3\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_avg_duration:avg(duration_ms), group_by(OBSERVATION_KIND)"
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), job:string(EXTRA.job)\nfilter metric_name = \"process_cpu_seconds_total\"\nmake_col OBSERVATION_KIND:job\ntimechart options(empty_bins:true), A_flow_runs:rate(metric_value), group_by(OBSERVATION_KIND)"
           ],
           "type": "unknown",
           "index": 1,
@@ -35,12 +35,12 @@
       ],
       "managers": [
         {
-          "id": "v-stage-apm-latency",
+          "id": "v-stage-prefect-flow-runs",
           "type": "Vis",
           "vegaVis": {
             "x": "_c_valid_from",
             "y": [
-              "A_avg_duration"
+              "A_flow_runs"
             ],
             "type": "LineChart",
             "legend": {
@@ -75,21 +75,21 @@
     }
   },
   {
-    "id": "stage-apm-throughput",
-    "pipeline": "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name)\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_span_count:count(1), group_by(OBSERVATION_KIND)",
+    "id": "stage-prefect-task-runs",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), job:string(EXTRA.job)\nfilter metric_name = \"process_resident_memory_bytes\"\nmake_col metric_value_mb:metric_value/1048576\nmake_col OBSERVATION_KIND:job\ntimechart options(empty_bins:true), A_task_runs:avg(metric_value_mb), group_by(OBSERVATION_KIND)",
     "input": [
       {
         "datasetId": "${otel_raw_dataset_id}",
-        "inputName": "OTel Raw",
+        "inputName": "prefect-spcs-observe-agent",
         "inputRole": "Data"
       }
     ],
     "layout": {
       "type": "table",
-      "label": "Span Throughput by Operation",
+      "label": "Prefect Memory Usage (MB)",
       "steps": [
         {
-          "id": "si-stage-apm-throughput",
+          "id": "si-stage-prefect-task-runs",
           "opal": [],
           "type": "InputStep",
           "index": 0,
@@ -98,9 +98,9 @@
           "customSummary": ""
         },
         {
-          "id": "se-stage-apm-throughput",
+          "id": "se-stage-prefect-task-runs",
           "opal": [
-            "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name)\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_span_count:count(1), group_by(OBSERVATION_KIND)"
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), job:string(EXTRA.job)\nfilter metric_name = \"process_resident_memory_bytes\"\nmake_col metric_value_mb:metric_value/1048576\nmake_col OBSERVATION_KIND:job\ntimechart options(empty_bins:true), A_task_runs:avg(metric_value_mb), group_by(OBSERVATION_KIND)"
           ],
           "type": "unknown",
           "index": 1,
@@ -110,12 +110,12 @@
       ],
       "managers": [
         {
-          "id": "v-stage-apm-throughput",
+          "id": "v-stage-prefect-task-runs",
           "type": "Vis",
           "vegaVis": {
             "x": "_c_valid_from",
             "y": [
-              "A_span_count"
+              "A_task_runs"
             ],
             "type": "LineChart",
             "legend": {
@@ -150,21 +150,21 @@
     }
   },
   {
-    "id": "stage-apm-errors",
-    "pipeline": "filter OBSERVATION_KIND = \"otelspan\"\nmake_col status_code:string(int64(FIELDS.span.status.code))\nmake_col OBSERVATION_KIND:if(status_code = \"2\", \"ERROR\", if(status_code = \"1\", \"OK\", \"UNSET\"))\ntimechart options(empty_bins:true), A_status_count:count(1), group_by(OBSERVATION_KIND)",
+    "id": "stage-prefect-api-latency",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), job:string(EXTRA.job)\nfilter metric_name = \"process_open_fds\"\nmake_col OBSERVATION_KIND:job\ntimechart options(empty_bins:true), A_api_latency:avg(metric_value), group_by(OBSERVATION_KIND)",
     "input": [
       {
         "datasetId": "${otel_raw_dataset_id}",
-        "inputName": "OTel Raw",
+        "inputName": "prefect-spcs-observe-agent",
         "inputRole": "Data"
       }
     ],
     "layout": {
       "type": "table",
-      "label": "Spans by Status Code",
+      "label": "Prefect Open File Descriptors",
       "steps": [
         {
-          "id": "si-stage-apm-errors",
+          "id": "si-stage-prefect-api-latency",
           "opal": [],
           "type": "InputStep",
           "index": 0,
@@ -173,9 +173,9 @@
           "customSummary": ""
         },
         {
-          "id": "se-stage-apm-errors",
+          "id": "se-stage-prefect-api-latency",
           "opal": [
-            "filter OBSERVATION_KIND = \"otelspan\"\nmake_col status_code:string(int64(FIELDS.span.status.code))\nmake_col OBSERVATION_KIND:if(status_code = \"2\", \"ERROR\", if(status_code = \"1\", \"OK\", \"UNSET\"))\ntimechart options(empty_bins:true), A_status_count:count(1), group_by(OBSERVATION_KIND)"
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), job:string(EXTRA.job)\nfilter metric_name = \"process_open_fds\"\nmake_col OBSERVATION_KIND:job\ntimechart options(empty_bins:true), A_api_latency:avg(metric_value), group_by(OBSERVATION_KIND)"
           ],
           "type": "unknown",
           "index": 1,
@@ -185,12 +185,12 @@
       ],
       "managers": [
         {
-          "id": "v-stage-apm-errors",
+          "id": "v-stage-prefect-api-latency",
           "type": "Vis",
           "vegaVis": {
             "x": "_c_valid_from",
             "y": [
-              "A_status_count"
+              "A_api_latency"
             ],
             "type": "LineChart",
             "legend": {
@@ -225,21 +225,21 @@
     }
   },
   {
-    "id": "stage-apm-top-spans",
-    "pipeline": "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name), duration_ms:float64(int64(FIELDS.span.end_time_unix_nano)-int64(FIELDS.span.start_time_unix_nano))/1000000.0\nfilter int64(FIELDS.span.kind) = 2 or int64(FIELDS.span.kind) = 3\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_max_duration:max(duration_ms), group_by(OBSERVATION_KIND)",
+    "id": "stage-prefect-worker-heartbeat",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), job:string(EXTRA.job)\nfilter metric_name = \"up\"\nmake_col OBSERVATION_KIND:job\ntimechart options(empty_bins:true), A_worker_up:avg(metric_value), group_by(OBSERVATION_KIND)",
     "input": [
       {
         "datasetId": "${otel_raw_dataset_id}",
-        "inputName": "OTel Raw",
+        "inputName": "prefect-spcs-observe-agent",
         "inputRole": "Data"
       }
     ],
     "layout": {
       "type": "table",
-      "label": "Max Latency by Operation (ms)",
+      "label": "Worker Heartbeat (up metric)",
       "steps": [
         {
-          "id": "si-stage-apm-top-spans",
+          "id": "si-stage-prefect-worker-heartbeat",
           "opal": [],
           "type": "InputStep",
           "index": 0,
@@ -248,9 +248,9 @@
           "customSummary": ""
         },
         {
-          "id": "se-stage-apm-top-spans",
+          "id": "se-stage-prefect-worker-heartbeat",
           "opal": [
-            "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name), duration_ms:float64(int64(FIELDS.span.end_time_unix_nano)-int64(FIELDS.span.start_time_unix_nano))/1000000.0\nfilter int64(FIELDS.span.kind) = 2 or int64(FIELDS.span.kind) = 3\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_max_duration:max(duration_ms), group_by(OBSERVATION_KIND)"
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), job:string(EXTRA.job)\nfilter metric_name = \"up\"\nmake_col OBSERVATION_KIND:job\ntimechart options(empty_bins:true), A_worker_up:avg(metric_value), group_by(OBSERVATION_KIND)"
           ],
           "type": "unknown",
           "index": 1,
@@ -260,12 +260,12 @@
       ],
       "managers": [
         {
-          "id": "v-stage-apm-top-spans",
+          "id": "v-stage-prefect-worker-heartbeat",
           "type": "Vis",
           "vegaVis": {
             "x": "_c_valid_from",
             "y": [
-              "A_max_duration"
+              "A_worker_up"
             ],
             "type": "LineChart",
             "legend": {

@@ -259,3 +259,93 @@ resource "observe_dashboard" "login_security" {
     },
   ])
 }
+
+# ---------------------------------------------------------------------------
+# 6. Infrastructure Health — Prometheus metrics: service up/down, CPU, memory,
+#    Redis memory, PostgreSQL connections, Redis commands/sec
+# ---------------------------------------------------------------------------
+resource "observe_dashboard" "infra_health" {
+  name      = "Infrastructure Health"
+  workspace = data.observe_workspace.default.oid
+
+  layout = templatefile("${path.module}/infra_layout.json.tftpl", {})
+
+  stages = templatefile("${path.module}/infra_stages.json.tftpl", {
+    otel_raw_dataset_id = data.observe_dataset.otel_raw.id
+  })
+}
+
+# ---------------------------------------------------------------------------
+# 7. Prefect Application — Prometheus metrics: flow run states, success rate,
+#    active workers, deployment count
+# ---------------------------------------------------------------------------
+resource "observe_dashboard" "prefect_app" {
+  name      = "Prefect Application"
+  workspace = data.observe_workspace.default.oid
+
+  layout = templatefile("${path.module}/prefect_app_layout.json.tftpl", {})
+
+  stages = templatefile("${path.module}/prefect_app_stages.json.tftpl", {
+    otel_raw_dataset_id = data.observe_dataset.otel_raw.id
+  })
+}
+
+# ---------------------------------------------------------------------------
+# 8. PostgreSQL Detail — Prometheus metrics: tuple operations, dead tuples,
+#    cache hit ratio, active connections
+# ---------------------------------------------------------------------------
+resource "observe_dashboard" "pg_detail" {
+  name      = "PostgreSQL Detail"
+  workspace = data.observe_workspace.default.oid
+
+  layout = templatefile("${path.module}/pg_detail_layout.json.tftpl", {})
+
+  stages = templatefile("${path.module}/pg_detail_stages.json.tftpl", {
+    otel_raw_dataset_id = data.observe_dataset.otel_raw.id
+  })
+}
+
+# ---------------------------------------------------------------------------
+# 9. Redis Detail — Prometheus metrics: memory usage, cache hit rate,
+#    network I/O, connected clients
+# ---------------------------------------------------------------------------
+resource "observe_dashboard" "redis_detail" {
+  name      = "Redis Detail"
+  workspace = data.observe_workspace.default.oid
+
+  layout = templatefile("${path.module}/redis_detail_layout.json.tftpl", {})
+
+  stages = templatefile("${path.module}/redis_detail_stages.json.tftpl", {
+    otel_raw_dataset_id = data.observe_dataset.otel_raw.id
+  })
+}
+
+# ---------------------------------------------------------------------------
+# 10. VM Workers — Prometheus metrics from node-exporter: CPU, memory,
+#     disk usage, network I/O
+# ---------------------------------------------------------------------------
+resource "observe_dashboard" "vm_workers" {
+  name      = "VM Workers"
+  workspace = data.observe_workspace.default.oid
+
+  layout = templatefile("${path.module}/vm_workers_layout.json.tftpl", {})
+
+  stages = templatefile("${path.module}/vm_workers_stages.json.tftpl", {
+    otel_raw_dataset_id = data.observe_dataset.otel_raw.id
+  })
+}
+
+# ---------------------------------------------------------------------------
+# 11. Logs Explorer — Loki logs: log volume over time, logs by source,
+#     error log stream
+# ---------------------------------------------------------------------------
+resource "observe_dashboard" "logs_explorer" {
+  name      = "Logs Explorer"
+  workspace = data.observe_workspace.default.oid
+
+  layout = templatefile("${path.module}/logs_explorer_layout.json.tftpl", {})
+
+  stages = templatefile("${path.module}/logs_explorer_stages.json.tftpl", {
+    otel_raw_dataset_id = data.observe_dataset.otel_raw.id
+  })
+}

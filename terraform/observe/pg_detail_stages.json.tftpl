@@ -1,20 +1,20 @@
 [
   {
-    "id": "stage-apm-latency",
-    "pipeline": "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name), duration_ms:float64(int64(FIELDS.span.end_time_unix_nano)-int64(FIELDS.span.start_time_unix_nano))/1000000.0\nfilter int64(FIELDS.span.kind) = 2 or int64(FIELDS.span.kind) = 3\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_avg_duration:avg(duration_ms), group_by(OBSERVATION_KIND)",
+    "id": "stage-pg-connections",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), datname:string(EXTRA.datname)\nfilter metric_name = \"pg_stat_activity_count\"\nmake_col OBSERVATION_KIND:datname\ntimechart options(empty_bins:true), A_pg_conns:sum(metric_value), group_by(OBSERVATION_KIND)",
     "input": [
       {
         "datasetId": "${otel_raw_dataset_id}",
-        "inputName": "OTel Raw",
+        "inputName": "prefect-spcs-observe-agent",
         "inputRole": "Data"
       }
     ],
     "layout": {
       "type": "table",
-      "label": "Avg Span Duration by Operation (ms)",
+      "label": "Active Connections by Database",
       "steps": [
         {
-          "id": "si-stage-apm-latency",
+          "id": "si-stage-pg-connections",
           "opal": [],
           "type": "InputStep",
           "index": 0,
@@ -23,9 +23,9 @@
           "customSummary": ""
         },
         {
-          "id": "se-stage-apm-latency",
+          "id": "se-stage-pg-connections",
           "opal": [
-            "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name), duration_ms:float64(int64(FIELDS.span.end_time_unix_nano)-int64(FIELDS.span.start_time_unix_nano))/1000000.0\nfilter int64(FIELDS.span.kind) = 2 or int64(FIELDS.span.kind) = 3\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_avg_duration:avg(duration_ms), group_by(OBSERVATION_KIND)"
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), datname:string(EXTRA.datname)\nfilter metric_name = \"pg_stat_activity_count\"\nmake_col OBSERVATION_KIND:datname\ntimechart options(empty_bins:true), A_pg_conns:sum(metric_value), group_by(OBSERVATION_KIND)"
           ],
           "type": "unknown",
           "index": 1,
@@ -35,12 +35,12 @@
       ],
       "managers": [
         {
-          "id": "v-stage-apm-latency",
+          "id": "v-stage-pg-connections",
           "type": "Vis",
           "vegaVis": {
             "x": "_c_valid_from",
             "y": [
-              "A_avg_duration"
+              "A_pg_conns"
             ],
             "type": "LineChart",
             "legend": {
@@ -75,21 +75,21 @@
     }
   },
   {
-    "id": "stage-apm-throughput",
-    "pipeline": "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name)\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_span_count:count(1), group_by(OBSERVATION_KIND)",
+    "id": "stage-pg-tup-ops",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), datname:string(EXTRA.datname)\nfilter metric_name = \"pg_stat_database_tup_inserted\"\nmake_col OBSERVATION_KIND:datname\ntimechart options(empty_bins:true), A_tup_inserted:rate(metric_value), group_by(OBSERVATION_KIND)",
     "input": [
       {
         "datasetId": "${otel_raw_dataset_id}",
-        "inputName": "OTel Raw",
+        "inputName": "prefect-spcs-observe-agent",
         "inputRole": "Data"
       }
     ],
     "layout": {
       "type": "table",
-      "label": "Span Throughput by Operation",
+      "label": "Tuple Operations Rate (inserted)",
       "steps": [
         {
-          "id": "si-stage-apm-throughput",
+          "id": "si-stage-pg-tup-ops",
           "opal": [],
           "type": "InputStep",
           "index": 0,
@@ -98,9 +98,9 @@
           "customSummary": ""
         },
         {
-          "id": "se-stage-apm-throughput",
+          "id": "se-stage-pg-tup-ops",
           "opal": [
-            "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name)\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_span_count:count(1), group_by(OBSERVATION_KIND)"
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), datname:string(EXTRA.datname)\nfilter metric_name = \"pg_stat_database_tup_inserted\"\nmake_col OBSERVATION_KIND:datname\ntimechart options(empty_bins:true), A_tup_inserted:rate(metric_value), group_by(OBSERVATION_KIND)"
           ],
           "type": "unknown",
           "index": 1,
@@ -110,12 +110,12 @@
       ],
       "managers": [
         {
-          "id": "v-stage-apm-throughput",
+          "id": "v-stage-pg-tup-ops",
           "type": "Vis",
           "vegaVis": {
             "x": "_c_valid_from",
             "y": [
-              "A_span_count"
+              "A_tup_inserted"
             ],
             "type": "LineChart",
             "legend": {
@@ -150,21 +150,21 @@
     }
   },
   {
-    "id": "stage-apm-errors",
-    "pipeline": "filter OBSERVATION_KIND = \"otelspan\"\nmake_col status_code:string(int64(FIELDS.span.status.code))\nmake_col OBSERVATION_KIND:if(status_code = \"2\", \"ERROR\", if(status_code = \"1\", \"OK\", \"UNSET\"))\ntimechart options(empty_bins:true), A_status_count:count(1), group_by(OBSERVATION_KIND)",
+    "id": "stage-pg-locks",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), mode:string(EXTRA.mode)\nfilter metric_name = \"pg_locks_count\"\nmake_col OBSERVATION_KIND:mode\ntimechart options(empty_bins:true), A_locks:sum(metric_value), group_by(OBSERVATION_KIND)",
     "input": [
       {
         "datasetId": "${otel_raw_dataset_id}",
-        "inputName": "OTel Raw",
+        "inputName": "prefect-spcs-observe-agent",
         "inputRole": "Data"
       }
     ],
     "layout": {
       "type": "table",
-      "label": "Spans by Status Code",
+      "label": "Locks by Mode",
       "steps": [
         {
-          "id": "si-stage-apm-errors",
+          "id": "si-stage-pg-locks",
           "opal": [],
           "type": "InputStep",
           "index": 0,
@@ -173,9 +173,9 @@
           "customSummary": ""
         },
         {
-          "id": "se-stage-apm-errors",
+          "id": "se-stage-pg-locks",
           "opal": [
-            "filter OBSERVATION_KIND = \"otelspan\"\nmake_col status_code:string(int64(FIELDS.span.status.code))\nmake_col OBSERVATION_KIND:if(status_code = \"2\", \"ERROR\", if(status_code = \"1\", \"OK\", \"UNSET\"))\ntimechart options(empty_bins:true), A_status_count:count(1), group_by(OBSERVATION_KIND)"
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), mode:string(EXTRA.mode)\nfilter metric_name = \"pg_locks_count\"\nmake_col OBSERVATION_KIND:mode\ntimechart options(empty_bins:true), A_locks:sum(metric_value), group_by(OBSERVATION_KIND)"
           ],
           "type": "unknown",
           "index": 1,
@@ -185,12 +185,12 @@
       ],
       "managers": [
         {
-          "id": "v-stage-apm-errors",
+          "id": "v-stage-pg-locks",
           "type": "Vis",
           "vegaVis": {
             "x": "_c_valid_from",
             "y": [
-              "A_status_count"
+              "A_locks"
             ],
             "type": "LineChart",
             "legend": {
@@ -225,21 +225,21 @@
     }
   },
   {
-    "id": "stage-apm-top-spans",
-    "pipeline": "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name), duration_ms:float64(int64(FIELDS.span.end_time_unix_nano)-int64(FIELDS.span.start_time_unix_nano))/1000000.0\nfilter int64(FIELDS.span.kind) = 2 or int64(FIELDS.span.kind) = 3\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_max_duration:max(duration_ms), group_by(OBSERVATION_KIND)",
+    "id": "stage-pg-db-size",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), datname:string(EXTRA.datname)\nfilter metric_name = \"pg_database_size_bytes\"\nmake_col OBSERVATION_KIND:datname\ntimechart options(empty_bins:true), A_db_size:avg(metric_value), group_by(OBSERVATION_KIND)",
     "input": [
       {
         "datasetId": "${otel_raw_dataset_id}",
-        "inputName": "OTel Raw",
+        "inputName": "prefect-spcs-observe-agent",
         "inputRole": "Data"
       }
     ],
     "layout": {
       "type": "table",
-      "label": "Max Latency by Operation (ms)",
+      "label": "Database Size (bytes)",
       "steps": [
         {
-          "id": "si-stage-apm-top-spans",
+          "id": "si-stage-pg-db-size",
           "opal": [],
           "type": "InputStep",
           "index": 0,
@@ -248,9 +248,9 @@
           "customSummary": ""
         },
         {
-          "id": "se-stage-apm-top-spans",
+          "id": "se-stage-pg-db-size",
           "opal": [
-            "filter OBSERVATION_KIND = \"otelspan\"\nmake_col span_name:string(FIELDS.span.name), duration_ms:float64(int64(FIELDS.span.end_time_unix_nano)-int64(FIELDS.span.start_time_unix_nano))/1000000.0\nfilter int64(FIELDS.span.kind) = 2 or int64(FIELDS.span.kind) = 3\nmake_col OBSERVATION_KIND:span_name\ntimechart options(empty_bins:true), A_max_duration:max(duration_ms), group_by(OBSERVATION_KIND)"
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), datname:string(EXTRA.datname)\nfilter metric_name = \"pg_database_size_bytes\"\nmake_col OBSERVATION_KIND:datname\ntimechart options(empty_bins:true), A_db_size:avg(metric_value), group_by(OBSERVATION_KIND)"
           ],
           "type": "unknown",
           "index": 1,
@@ -260,12 +260,12 @@
       ],
       "managers": [
         {
-          "id": "v-stage-apm-top-spans",
+          "id": "v-stage-pg-db-size",
           "type": "Vis",
           "vegaVis": {
             "x": "_c_valid_from",
             "y": [
-              "A_max_duration"
+              "A_db_size"
             ],
             "type": "LineChart",
             "legend": {

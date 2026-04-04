@@ -1,0 +1,227 @@
+[
+  {
+    "id": "stage-logs-volume",
+    "pipeline": "filter OBSERVATION_KIND = \"otellogs\"\nmake_col OBSERVATION_KIND:\"otellogs\"\ntimechart options(empty_bins:true), A_log_count:count(1), group_by(OBSERVATION_KIND)",
+    "input": [
+      {
+        "datasetId": "${otel_raw_dataset_id}",
+        "inputName": "prefect-spcs-observe-agent",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "table",
+      "label": "Total Log Volume",
+      "steps": [
+        {
+          "id": "si-stage-logs-volume",
+          "opal": [],
+          "type": "InputStep",
+          "index": 0,
+          "isPinned": false,
+          "customName": "Input",
+          "customSummary": ""
+        },
+        {
+          "id": "se-stage-logs-volume",
+          "opal": [
+            "filter OBSERVATION_KIND = \"otellogs\"\nmake_col OBSERVATION_KIND:\"otellogs\"\ntimechart options(empty_bins:true), A_log_count:count(1), group_by(OBSERVATION_KIND)"
+          ],
+          "type": "unknown",
+          "index": 1,
+          "isPinned": false,
+          "customSummary": "OPAL Transform"
+        }
+      ],
+      "managers": [
+        {
+          "id": "v-stage-logs-volume",
+          "type": "Vis",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_log_count"
+            ],
+            "type": "LineChart",
+            "legend": {
+              "type": "list",
+              "visible": true
+            },
+            "xConfig": {
+              "valueFormat": {
+                "notation": "compact"
+              }
+            },
+            "yConfig": {
+              "show": true,
+              "valueFormat": {
+                "options": {
+                  "notation": "compact"
+                }
+              }
+            },
+            "lineConfig": {
+              "areaFillType": "TranslucentFill"
+            },
+            "color": "OBSERVATION_KIND"
+          },
+          "isDisabled": false
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "showTimeRuler": true
+      }
+    }
+  },
+  {
+    "id": "stage-logs-rate",
+    "pipeline": "timechart options(empty_bins:true), A_log_rate:count(1), group_by(OBSERVATION_KIND)",
+    "input": [
+      {
+        "datasetId": "${otel_raw_dataset_id}",
+        "inputName": "prefect-spcs-observe-agent",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "table",
+      "label": "Events by Type",
+      "steps": [
+        {
+          "id": "si-stage-logs-rate",
+          "opal": [],
+          "type": "InputStep",
+          "index": 0,
+          "isPinned": false,
+          "customName": "Input",
+          "customSummary": ""
+        },
+        {
+          "id": "se-stage-logs-rate",
+          "opal": [
+            "timechart options(empty_bins:true), A_log_rate:count(1), group_by(OBSERVATION_KIND)"
+          ],
+          "type": "unknown",
+          "index": 1,
+          "isPinned": false,
+          "customSummary": "OPAL Transform"
+        }
+      ],
+      "managers": [
+        {
+          "id": "v-stage-logs-rate",
+          "type": "Vis",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_log_rate"
+            ],
+            "type": "LineChart",
+            "legend": {
+              "type": "list",
+              "visible": true
+            },
+            "xConfig": {
+              "valueFormat": {
+                "notation": "compact"
+              }
+            },
+            "yConfig": {
+              "show": true,
+              "valueFormat": {
+                "options": {
+                  "notation": "compact"
+                }
+              }
+            },
+            "lineConfig": {
+              "areaFillType": "TranslucentFill"
+            },
+            "color": "OBSERVATION_KIND"
+          },
+          "isDisabled": false
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "showTimeRuler": true
+      }
+    }
+  },
+  {
+    "id": "stage-logs-total",
+    "pipeline": "filter OBSERVATION_KIND = \"otellogs\"\nmake_col OBSERVATION_KIND:\"all_logs\"\ntimechart options(empty_bins:true), A_total:count(1), group_by(OBSERVATION_KIND)",
+    "input": [
+      {
+        "datasetId": "${otel_raw_dataset_id}",
+        "inputName": "prefect-spcs-observe-agent",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "table",
+      "label": "Total Log Volume",
+      "steps": [
+        {
+          "id": "si-stage-logs-total",
+          "opal": [],
+          "type": "InputStep",
+          "index": 0,
+          "isPinned": false,
+          "customName": "Input",
+          "customSummary": ""
+        },
+        {
+          "id": "se-stage-logs-total",
+          "opal": [
+            "filter OBSERVATION_KIND = \"otellogs\"\nmake_col OBSERVATION_KIND:\"all_logs\"\ntimechart options(empty_bins:true), A_total:count(1), group_by(OBSERVATION_KIND)"
+          ],
+          "type": "unknown",
+          "index": 1,
+          "isPinned": false,
+          "customSummary": "OPAL Transform"
+        }
+      ],
+      "managers": [
+        {
+          "id": "v-stage-logs-total",
+          "type": "Vis",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_total"
+            ],
+            "type": "LineChart",
+            "legend": {
+              "type": "list",
+              "visible": true
+            },
+            "xConfig": {
+              "valueFormat": {
+                "notation": "compact"
+              }
+            },
+            "yConfig": {
+              "show": true,
+              "valueFormat": {
+                "options": {
+                  "notation": "compact"
+                }
+              }
+            },
+            "lineConfig": {
+              "areaFillType": "TranslucentFill"
+            },
+            "color": "OBSERVATION_KIND"
+          },
+          "isDisabled": false
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "showTimeRuler": true
+      }
+    }
+  }
+]

@@ -39,6 +39,12 @@ data "observe_dataset" "task_history" {
   name      = "Snowflake/TASK_HISTORY"
 }
 
+# Raw observe-agent dataset — Prometheus remote_write + Loki logs land here
+data "observe_dataset" "otel_raw" {
+  workspace = data.observe_workspace.default.oid
+  name      = "prefect-spcs-observe-agent"
+}
+
 # OTel datasets — auto-created when observe-agent starts sending traces/metrics
 data "observe_dataset" "otel_spans" {
   workspace = data.observe_workspace.default.oid

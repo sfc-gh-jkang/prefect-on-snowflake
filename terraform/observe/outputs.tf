@@ -6,6 +6,12 @@ output "dashboard_urls" {
     warehouse_performance = "https://${var.observe_customer_id}.observeinc.com/workspace/${data.observe_workspace.default.id}/dashboard/${observe_dashboard.warehouse_performance.id}"
     cost_metering         = "https://${var.observe_customer_id}.observeinc.com/workspace/${data.observe_workspace.default.id}/dashboard/${observe_dashboard.cost_metering.id}"
     login_security        = "https://${var.observe_customer_id}.observeinc.com/workspace/${data.observe_workspace.default.id}/dashboard/${observe_dashboard.login_security.id}"
+    infra_health          = "https://${var.observe_customer_id}.observeinc.com/workspace/${data.observe_workspace.default.id}/dashboard/${observe_dashboard.infra_health.id}"
+    prefect_app           = "https://${var.observe_customer_id}.observeinc.com/workspace/${data.observe_workspace.default.id}/dashboard/${observe_dashboard.prefect_app.id}"
+    pg_detail             = "https://${var.observe_customer_id}.observeinc.com/workspace/${data.observe_workspace.default.id}/dashboard/${observe_dashboard.pg_detail.id}"
+    redis_detail          = "https://${var.observe_customer_id}.observeinc.com/workspace/${data.observe_workspace.default.id}/dashboard/${observe_dashboard.redis_detail.id}"
+    vm_workers            = "https://${var.observe_customer_id}.observeinc.com/workspace/${data.observe_workspace.default.id}/dashboard/${observe_dashboard.vm_workers.id}"
+    logs_explorer         = "https://${var.observe_customer_id}.observeinc.com/workspace/${data.observe_workspace.default.id}/dashboard/${observe_dashboard.logs_explorer.id}"
   }
 }
 

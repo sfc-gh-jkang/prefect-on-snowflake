@@ -1,0 +1,450 @@
+[
+  {
+    "id": "stage-infra-service-up",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), job:string(EXTRA.job)\nfilter metric_name = \"up\"\nmake_col OBSERVATION_KIND:job\ntimechart options(empty_bins:true), A_svc_up:avg(metric_value), group_by(OBSERVATION_KIND)",
+    "input": [
+      {
+        "datasetId": "${otel_raw_dataset_id}",
+        "inputName": "prefect-spcs-observe-agent",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "table",
+      "label": "Service Up/Down Status",
+      "steps": [
+        {
+          "id": "si-stage-infra-service-up",
+          "opal": [],
+          "type": "InputStep",
+          "index": 0,
+          "isPinned": false,
+          "customName": "Input",
+          "customSummary": ""
+        },
+        {
+          "id": "se-stage-infra-service-up",
+          "opal": [
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), job:string(EXTRA.job)\nfilter metric_name = \"up\"\nmake_col OBSERVATION_KIND:job\ntimechart options(empty_bins:true), A_svc_up:avg(metric_value), group_by(OBSERVATION_KIND)"
+          ],
+          "type": "unknown",
+          "index": 1,
+          "isPinned": false,
+          "customSummary": "OPAL Transform"
+        }
+      ],
+      "managers": [
+        {
+          "id": "v-stage-infra-service-up",
+          "type": "Vis",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_svc_up"
+            ],
+            "type": "LineChart",
+            "legend": {
+              "type": "list",
+              "visible": true
+            },
+            "xConfig": {
+              "valueFormat": {
+                "notation": "compact"
+              }
+            },
+            "yConfig": {
+              "show": true,
+              "valueFormat": {
+                "options": {
+                  "notation": "compact"
+                }
+              }
+            },
+            "lineConfig": {
+              "areaFillType": "TranslucentFill"
+            },
+            "color": "OBSERVATION_KIND"
+          },
+          "isDisabled": false
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "showTimeRuler": true
+      }
+    }
+  },
+  {
+    "id": "stage-infra-cpu",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), job:string(EXTRA.job)\nfilter metric_name = \"process_cpu_seconds_total\"\nmake_col OBSERVATION_KIND:job\ntimechart options(empty_bins:true), A_cpu_rate:rate(metric_value), group_by(OBSERVATION_KIND)",
+    "input": [
+      {
+        "datasetId": "${otel_raw_dataset_id}",
+        "inputName": "prefect-spcs-observe-agent",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "table",
+      "label": "Process CPU Usage by Service",
+      "steps": [
+        {
+          "id": "si-stage-infra-cpu",
+          "opal": [],
+          "type": "InputStep",
+          "index": 0,
+          "isPinned": false,
+          "customName": "Input",
+          "customSummary": ""
+        },
+        {
+          "id": "se-stage-infra-cpu",
+          "opal": [
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), job:string(EXTRA.job)\nfilter metric_name = \"process_cpu_seconds_total\"\nmake_col OBSERVATION_KIND:job\ntimechart options(empty_bins:true), A_cpu_rate:rate(metric_value), group_by(OBSERVATION_KIND)"
+          ],
+          "type": "unknown",
+          "index": 1,
+          "isPinned": false,
+          "customSummary": "OPAL Transform"
+        }
+      ],
+      "managers": [
+        {
+          "id": "v-stage-infra-cpu",
+          "type": "Vis",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_cpu_rate"
+            ],
+            "type": "LineChart",
+            "legend": {
+              "type": "list",
+              "visible": true
+            },
+            "xConfig": {
+              "valueFormat": {
+                "notation": "compact"
+              }
+            },
+            "yConfig": {
+              "show": true,
+              "valueFormat": {
+                "options": {
+                  "notation": "compact"
+                }
+              }
+            },
+            "lineConfig": {
+              "areaFillType": "TranslucentFill"
+            },
+            "color": "OBSERVATION_KIND"
+          },
+          "isDisabled": false
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "showTimeRuler": true
+      }
+    }
+  },
+  {
+    "id": "stage-infra-memory",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), job:string(EXTRA.job)\nfilter metric_name = \"process_resident_memory_bytes\"\nmake_col metric_value_mb:metric_value/1048576\nmake_col OBSERVATION_KIND:job\ntimechart options(empty_bins:true), A_mem_mb:avg(metric_value_mb), group_by(OBSERVATION_KIND)",
+    "input": [
+      {
+        "datasetId": "${otel_raw_dataset_id}",
+        "inputName": "prefect-spcs-observe-agent",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "table",
+      "label": "Process Memory Usage by Service (MB)",
+      "steps": [
+        {
+          "id": "si-stage-infra-memory",
+          "opal": [],
+          "type": "InputStep",
+          "index": 0,
+          "isPinned": false,
+          "customName": "Input",
+          "customSummary": ""
+        },
+        {
+          "id": "se-stage-infra-memory",
+          "opal": [
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), job:string(EXTRA.job)\nfilter metric_name = \"process_resident_memory_bytes\"\nmake_col metric_value_mb:metric_value/1048576\nmake_col OBSERVATION_KIND:job\ntimechart options(empty_bins:true), A_mem_mb:avg(metric_value_mb), group_by(OBSERVATION_KIND)"
+          ],
+          "type": "unknown",
+          "index": 1,
+          "isPinned": false,
+          "customSummary": "OPAL Transform"
+        }
+      ],
+      "managers": [
+        {
+          "id": "v-stage-infra-memory",
+          "type": "Vis",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_mem_mb"
+            ],
+            "type": "LineChart",
+            "legend": {
+              "type": "list",
+              "visible": true
+            },
+            "xConfig": {
+              "valueFormat": {
+                "notation": "compact"
+              }
+            },
+            "yConfig": {
+              "show": true,
+              "valueFormat": {
+                "options": {
+                  "notation": "compact"
+                }
+              }
+            },
+            "lineConfig": {
+              "areaFillType": "TranslucentFill"
+            },
+            "color": "OBSERVATION_KIND"
+          },
+          "isDisabled": false
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "showTimeRuler": true
+      }
+    }
+  },
+  {
+    "id": "stage-infra-redis-mem",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value)\nfilter metric_name = \"redis_memory_used_bytes\"\nmake_col metric_value_mb:metric_value/1048576\ntimechart options(empty_bins:true), A_redis_mem:avg(metric_value_mb)",
+    "input": [
+      {
+        "datasetId": "${otel_raw_dataset_id}",
+        "inputName": "prefect-spcs-observe-agent",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "table",
+      "label": "Redis Memory Usage (MB)",
+      "steps": [
+        {
+          "id": "si-stage-infra-redis-mem",
+          "opal": [],
+          "type": "InputStep",
+          "index": 0,
+          "isPinned": false,
+          "customName": "Input",
+          "customSummary": ""
+        },
+        {
+          "id": "se-stage-infra-redis-mem",
+          "opal": [
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value)\nfilter metric_name = \"redis_memory_used_bytes\"\nmake_col metric_value_mb:metric_value/1048576\ntimechart options(empty_bins:true), A_redis_mem:avg(metric_value_mb)"
+          ],
+          "type": "unknown",
+          "index": 1,
+          "isPinned": false,
+          "customSummary": "OPAL Transform"
+        }
+      ],
+      "managers": [
+        {
+          "id": "v-stage-infra-redis-mem",
+          "type": "Vis",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_redis_mem"
+            ],
+            "type": "LineChart",
+            "legend": {
+              "type": "list",
+              "visible": true
+            },
+            "xConfig": {
+              "valueFormat": {
+                "notation": "compact"
+              }
+            },
+            "yConfig": {
+              "show": true,
+              "valueFormat": {
+                "options": {
+                  "notation": "compact"
+                }
+              }
+            },
+            "lineConfig": {
+              "areaFillType": "TranslucentFill"
+            }
+          },
+          "isDisabled": false
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "showTimeRuler": true
+      }
+    }
+  },
+  {
+    "id": "stage-infra-pg-conns",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), datname:string(EXTRA.datname)\nfilter metric_name = \"pg_stat_activity_count\"\nmake_col OBSERVATION_KIND:datname\ntimechart options(empty_bins:true), A_pg_conns:sum(metric_value), group_by(OBSERVATION_KIND)",
+    "input": [
+      {
+        "datasetId": "${otel_raw_dataset_id}",
+        "inputName": "prefect-spcs-observe-agent",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "table",
+      "label": "PostgreSQL Active Connections",
+      "steps": [
+        {
+          "id": "si-stage-infra-pg-conns",
+          "opal": [],
+          "type": "InputStep",
+          "index": 0,
+          "isPinned": false,
+          "customName": "Input",
+          "customSummary": ""
+        },
+        {
+          "id": "se-stage-infra-pg-conns",
+          "opal": [
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value), datname:string(EXTRA.datname)\nfilter metric_name = \"pg_stat_activity_count\"\nmake_col OBSERVATION_KIND:datname\ntimechart options(empty_bins:true), A_pg_conns:sum(metric_value), group_by(OBSERVATION_KIND)"
+          ],
+          "type": "unknown",
+          "index": 1,
+          "isPinned": false,
+          "customSummary": "OPAL Transform"
+        }
+      ],
+      "managers": [
+        {
+          "id": "v-stage-infra-pg-conns",
+          "type": "Vis",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_pg_conns"
+            ],
+            "type": "LineChart",
+            "legend": {
+              "type": "list",
+              "visible": true
+            },
+            "xConfig": {
+              "valueFormat": {
+                "notation": "compact"
+              }
+            },
+            "yConfig": {
+              "show": true,
+              "valueFormat": {
+                "options": {
+                  "notation": "compact"
+                }
+              }
+            },
+            "lineConfig": {
+              "areaFillType": "TranslucentFill"
+            },
+            "color": "OBSERVATION_KIND"
+          },
+          "isDisabled": false
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "showTimeRuler": true
+      }
+    }
+  },
+  {
+    "id": "stage-infra-redis-cmds",
+    "pipeline": "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value)\nfilter metric_name = \"redis_commands_processed_total\"\ntimechart options(empty_bins:true), A_redis_cmds:rate(metric_value)",
+    "input": [
+      {
+        "datasetId": "${otel_raw_dataset_id}",
+        "inputName": "prefect-spcs-observe-agent",
+        "inputRole": "Data"
+      }
+    ],
+    "layout": {
+      "type": "table",
+      "label": "Redis Commands/sec",
+      "steps": [
+        {
+          "id": "si-stage-infra-redis-cmds",
+          "opal": [],
+          "type": "InputStep",
+          "index": 0,
+          "isPinned": false,
+          "customName": "Input",
+          "customSummary": ""
+        },
+        {
+          "id": "se-stage-infra-redis-cmds",
+          "opal": [
+            "filter OBSERVATION_KIND = \"prometheus\"\nmake_col metric_name:string(EXTRA.\"__name__\"), metric_value:float64(FIELDS.value)\nfilter metric_name = \"redis_commands_processed_total\"\ntimechart options(empty_bins:true), A_redis_cmds:rate(metric_value)"
+          ],
+          "type": "unknown",
+          "index": 1,
+          "isPinned": false,
+          "customSummary": "OPAL Transform"
+        }
+      ],
+      "managers": [
+        {
+          "id": "v-stage-infra-redis-cmds",
+          "type": "Vis",
+          "vegaVis": {
+            "x": "_c_valid_from",
+            "y": [
+              "A_redis_cmds"
+            ],
+            "type": "LineChart",
+            "legend": {
+              "type": "list",
+              "visible": true
+            },
+            "xConfig": {
+              "valueFormat": {
+                "notation": "compact"
+              }
+            },
+            "yConfig": {
+              "show": true,
+              "valueFormat": {
+                "options": {
+                  "notation": "compact"
+                }
+              }
+            },
+            "lineConfig": {
+              "areaFillType": "TranslucentFill"
+            }
+          },
+          "isDisabled": false
+        }
+      ],
+      "viewModel": {
+        "stageTab": "vis",
+        "showTimeRuler": true
+      }
+    }
+  }
+]
