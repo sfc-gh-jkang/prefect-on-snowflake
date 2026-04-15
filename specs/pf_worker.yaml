@@ -42,6 +42,10 @@ spec:
         OTEL_TRACES_EXPORTER: "otlp"
         OTEL_METRICS_EXPORTER: "none"
         OTEL_LOGS_EXPORTER: "none"
+        # Disable system_metrics instrumentation — it creates an HTTP metric
+        # exporter that ignores OTEL_METRICS_EXPORTER=none and fails with
+        # ConnectionResetError against the observe-agent's gRPC-only receiver.
+        OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: "system_metrics"
         OTEL_RESOURCE_ATTRIBUTES: "deployment.environment.name=spcs,service.namespace=prefect"
         OTEL_TRACES_SAMPLER: "parentbased_always_on"
       secrets:
