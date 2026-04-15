@@ -98,7 +98,7 @@ groups:
           - refId: A
             datasourceUid: loki
             model:
-              expr: 'sum(count_over_time({job="spcs-logs", severity="ERROR"} !~ "OCSP|empty ring|ssl.*cannot be changed"[5m]))'
+              expr: 'sum(count_over_time({job="spcs-logs", severity="ERROR"} !~ "OCSP|empty ring|ssl.*cannot be changed|Out of order sample"[5m]))'
               instant: true
               refId: A
             relativeTimeRange:

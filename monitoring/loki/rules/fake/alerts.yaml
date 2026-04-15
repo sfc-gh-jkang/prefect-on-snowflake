@@ -10,7 +10,7 @@ groups:
       # ── Error spike in SPCS container logs ─────────────────────
       - alert: SPCSErrorSpike
         expr: |
-          sum(count_over_time({job="spcs-logs", severity="ERROR"}[5m])) > 10
+          sum(count_over_time({job="spcs-logs", severity="ERROR"} !~ "OCSP|empty ring|ssl.*cannot be changed|Out of order sample" [5m])) > 10
         for: 2m
         labels:
           severity: warning
