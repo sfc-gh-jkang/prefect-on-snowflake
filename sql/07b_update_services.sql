@@ -33,14 +33,12 @@ ALTER SERVICE PF_SERVICES
     SPECIFICATION_FILE = 'pf_services.yaml';
 
 -- 4. Prefect Worker (worker pool — flow execution, auto-scaled)
---    PREFECT_MONITOR_EAI provides access to Observe's collect endpoint for
---    direct OTLP trace export.  Cross-service OTLP (worker → observe-agent)
---    does NOT work in SPCS because public endpoint ingress requires Snowflake
---    auth headers that the Python OTel SDK cannot inject.
+--    PREFECT_WORKER_EAI: pypi, gitlab, httpbin egress for flow execution.
+--    MONITOR_EGRESS_EAI: Observe collect endpoint egress for the co-located
+--      observe-agent sidecar that relays OTLP traces (gRPC localhost:4317).
 ALTER SERVICE PF_WORKER
     FROM @PREFECT_SPECS
-    SPECIFICATION_FILE = 'pf_worker.yaml'
-    EXTERNAL_ACCESS_INTEGRATIONS = (PREFECT_MONITOR_EAI);
+    SPECIFICATION_FILE = 'pf_worker.yaml';
 
 ALTER SERVICE PF_WORKER SET
     MIN_INSTANCES = 1

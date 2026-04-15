@@ -1,9 +1,11 @@
 # observe-agent-spcs.yaml — Observe Agent config for SPCS sidecar.
-# Runs as a container in PF_MONITOR as an OTLP relay endpoint.
+# Runs as a container alongside PF_WORKER as the primary OTLP relay.
 #
-# NOTE: PF_WORKER currently exports traces DIRECTLY to Observe (bypassing
-# this relay) for simplicity. This agent remains available for any future
-# SPCS services that prefer to send OTLP to a local relay instead.
+# PF_WORKER sends traces to this agent at localhost:4318 (HTTP OTLP).
+# The agent authenticates with Observe (token baked into this file at
+# deploy time) and forwards traces to the collect endpoint.  This is
+# more reliable than direct-to-Observe export, which times out through
+# the SPCS EAI network path.
 #
 # No host_monitoring or docker_stats — those don't apply inside SPCS.
 # O4S handles SPCS container metrics/logs via ACCOUNT_USAGE + Event Table.
@@ -41,3 +43,15 @@ self_monitoring:
 resource_attributes:
   service.name: prefect-spcs-observe-relay
   deployment.environment.name: spcs
+
+# Explicit traces pipeline — the forwarding config only creates a logs/forward
+# pipeline in observe-agent 2.0.0 despite traces.enabled: true.  This override
+# wires the OTLP receiver (already listening on 4317/4318) into a traces
+# pipeline that exports to Observe via the built-in otlphttp/observe exporter.
+otel_config_overrides:
+  service:
+    pipelines:
+      traces/forward:
+        receivers: [otlp]
+        processors: [memory_limiter, resourcedetection, resourcedetection/cloud, batch]
+        exporters: [otlphttp/observe]

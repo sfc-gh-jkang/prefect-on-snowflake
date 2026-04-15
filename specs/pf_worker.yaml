@@ -29,18 +29,16 @@ spec:
         GIT_BRANCH: "main"
         PREFECT_WORKER_WEBSERVER_HOST: "0.0.0.0"
         PREFECT_WORKER_WEBSERVER_PORT: "8080"
-        # OTel auto-instrumentation — export traces directly to Observe collect endpoint.
-        # Uses HTTP/protobuf OTLP with datastream token auth.  The observe-agent sidecar
-        # is kept for host/self monitoring but traces bypass it to avoid localhost
-        # gRPC/HTTP connectivity issues inside SPCS pods.
-        #
-        # Placeholders are substituted by deploy.sh (upload_specs) from .env:
-        #   __OBSERVE_COLLECTION_URL__ → OBSERVE_COLLECTION_URL
-        #   __OBSERVE_DATASTREAM_TOKEN__ → OBSERVE_DATASTREAM_TOKEN
+        # OTel auto-instrumentation — export traces via the co-located observe-agent
+        # sidecar running in this same pod.  The observe-agent listens on
+        # localhost:4318 (HTTP) and localhost:4317 (gRPC), authenticates with
+        # Observe using its baked-in token, and forwards traces to the Observe
+        # collect endpoint.  This avoids SPCS-to-internet OTLP timeout issues
+        # that occur when the worker tries to reach collect.observeinc.com
+        # directly through the EAI network path.
         OTEL_SERVICE_NAME: "prefect-worker-spcs"
-        OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
-        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "__OBSERVE_COLLECTION_URL__/v1/otel/v1/traces"
-        OTEL_EXPORTER_OTLP_TRACES_HEADERS: "authorization=Bearer __OBSERVE_DATASTREAM_TOKEN__"
+        OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4317"
         OTEL_TRACES_EXPORTER: "otlp"
         OTEL_METRICS_EXPORTER: "none"
         OTEL_LOGS_EXPORTER: "none"
@@ -59,8 +57,10 @@ spec:
         path: /health
 
     # ── Observe Agent sidecar — OTLP relay for APM traces ──────────────
-    # Accepts OTLP traces from the co-located pf-worker via localhost:4318.
-    # Forwards traces to Observe's collect endpoint using MONITOR_EGRESS_EAI.
+    # The pf-worker sends OTLP traces to this sidecar at localhost:4318.
+    # The observe-agent authenticates with Observe (token baked into config)
+    # and forwards traces to the collect endpoint via MONITOR_EGRESS_EAI.
+    # This is more reliable than direct export, which times out through SPCS EAI.
     # Config is mounted from @MONITOR_STAGE/observe-agent/ with token/URL
     # baked in at deploy time by monitoring/deploy_monitoring.sh.
     - name: observe-agent

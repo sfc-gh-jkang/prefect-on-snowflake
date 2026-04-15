@@ -11,6 +11,7 @@ dependencies = [
     "requests>=2.31,<3",
     "opentelemetry-distro>=0.48b0",
     "opentelemetry-exporter-otlp>=1.27",
+    "opentelemetry-instrumentation-system-metrics>=0.48b0",
 ]
 
 [build-system]
