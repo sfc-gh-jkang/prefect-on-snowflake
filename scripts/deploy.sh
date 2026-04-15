@@ -138,7 +138,7 @@ if ${UPDATE_MODE}; then
     # Poll each service until READY (rolling restart after ALTER)
     echo "=== Waiting for services to reach READY ==="
     POLL_FAILED=false
-    for svc in PF_REDIS PF_SERVER PF_SERVICES PF_WORKER; do
+    for svc in PF_REDIS PF_SERVER PF_SERVICES PF_WORKER PF_MONITOR; do
         wait_for_ready "${svc}" || POLL_FAILED=true
     done
 

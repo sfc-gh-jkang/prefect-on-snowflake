@@ -22,6 +22,7 @@ SELECT SYSTEM$GET_SERVICE_LOGS('PF_REDIS', 0, 'pf-redis', 20);
 SELECT SYSTEM$GET_SERVICE_LOGS('PF_SERVER', 0, 'pf-server', 20);
 SELECT SYSTEM$GET_SERVICE_LOGS('PF_SERVICES', 0, 'pf-services', 20);
 SELECT SYSTEM$GET_SERVICE_LOGS('PF_WORKER', 0, 'pf-worker', 20);
+SELECT SYSTEM$GET_SERVICE_LOGS('PF_MONITOR', 0, 'prometheus', 20);
 
 -- Show public endpoint for server (used by hybrid workers + flow deployment)
 SHOW ENDPOINTS IN SERVICE PF_SERVER;

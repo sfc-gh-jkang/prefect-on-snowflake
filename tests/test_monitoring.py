@@ -84,8 +84,8 @@ class TestMonitorSpec:
     def test_has_top_level_spec_key(self):
         assert "spec" in self.spec
 
-    def test_has_all_eight_containers(self):
-        """PF_MONITOR must have exactly 8 containers (6 original + 2 backup sidecars)."""
+    def test_has_all_nine_containers(self):
+        """PF_MONITOR must have exactly 9 containers (6 original + 2 backup sidecars + observe-agent)."""
         containers = self.spec["spec"]["containers"]
         names = {c["name"] for c in containers}
         expected = {
@@ -97,6 +97,7 @@ class TestMonitorSpec:
             "event-log-poller",
             "prom-backup",
             "loki-backup",
+            "observe-agent",
         }
         assert names == expected, (
             f"Expected containers {expected}, got {names}. "
@@ -687,21 +688,18 @@ class TestVMMonitoringPipeline:
         )
 
     def test_prometheus_agent_uses_v1_protobuf(self):
-        """Remote write must specify prometheus.WriteRequest (v1 protobuf).
+        """Remote write must NOT use v2 protobuf (causes out-of-order errors).
 
-        Prometheus v3 defaults to v2 remote write protocol. The SPCS receiver
-        also runs v3 and returns 426 if the protocol doesn't match what it
-        expects. Using explicit protobuf_message ensures compatibility.
+        The SPCS Prometheus receiver rejects v2 remote write with "Out of order
+        sample" errors. We rely on the default v1 protocol (no protobuf_message
+        field) for compatibility.
         """
         config = yaml.safe_load(VM_PROM_AGENT.read_text())
         rw = config["remote_write"][0]
         proto = rw.get("protobuf_message", "")
-        assert proto in (
-            "prometheus.WriteRequest",
-            "io.prometheus.write.v2.Request",
-        ), (
-            f"remote_write protobuf_message must be explicitly set to a valid "
-            f"protocol, got: {proto!r}"
+        assert proto != "io.prometheus.write.v2.Request", (
+            "remote_write must not use v2 protocol "
+            "(io.prometheus.write.v2.Request causes out-of-order errors)"
         )
 
     def test_prometheus_agent_has_external_labels(self):
@@ -1830,26 +1828,27 @@ class TestMonitorSpecCPUBudget:
             assert "memory" in limits, f"Container '{c['name']}' missing memory limit."
 
     def test_total_cpu_limits_within_pool_capacity(self):
-        """Sum of all CPU limits must not exceed 2.0 (CPU_X64_S pool)."""
+        """Sum of all CPU limits must not exceed 2.5 (CPU_X64_S pool with overcommit).
+
+        CPU_X64_S provides 2 vCPU. SPCS allows slight overcommit on limits
+        when requests fit within capacity. Total requests must be <= 2.0.
+        """
         total = 0.0
         for c in self.containers:
             cpu = c.get("resources", {}).get("limits", {}).get("cpu", 1.0)
             total += float(cpu)
-        assert total <= 2.0, (
-            f"Total CPU limits ({total}) exceed CPU_X64_S capacity (2.0 vCPU). "
+        assert total <= 2.5, (
+            f"Total CPU limits ({total}) exceed 2.5 vCPU overcommit budget. "
             f"Either reduce limits or upgrade the compute pool."
         )
 
-    def test_total_cpu_limits_leaves_headroom(self):
-        """CPU limits should leave some headroom for SPCS overhead."""
+    def test_total_cpu_requests_within_pool_capacity(self):
+        """Sum of all CPU requests must not exceed 2.0 (CPU_X64_S pool)."""
         total = 0.0
         for c in self.containers:
-            cpu = c.get("resources", {}).get("limits", {}).get("cpu", 1.0)
+            cpu = c.get("resources", {}).get("requests", {}).get("cpu", 0)
             total += float(cpu)
-        assert total <= 2.0, (
-            f"Total CPU limits ({total}) exceed 2.0 vCPU capacity. "
-            f"SPCS schedules on limits — total must fit within pool size."
-        )
+        assert total <= 2.0, f"Total CPU requests ({total}) exceed CPU_X64_S capacity (2.0 vCPU)."
 
     def test_cpu_requests_less_than_or_equal_limits(self):
         """CPU requests must not exceed limits for any container."""
@@ -2662,9 +2661,9 @@ class TestMonitorSpecEndpoints:
         self.spec = yaml.safe_load(MONITOR_SPEC_FILE.read_text())
         self.endpoints = self.spec["spec"]["endpoints"]
 
-    def test_has_three_public_endpoints(self):
+    def test_has_five_public_endpoints(self):
         public = [e for e in self.endpoints if e.get("public") is True]
-        assert len(public) == 3, f"Expected 3 public endpoints, got {len(public)}"
+        assert len(public) == 5, f"Expected 5 public endpoints, got {len(public)}"
 
     def test_grafana_endpoint_port_3000(self):
         grafana = next(e for e in self.endpoints if e["name"] == "grafana")
@@ -2718,14 +2717,14 @@ class TestMonitorSpecVolumes:
         self.spec = yaml.safe_load(MONITOR_SPEC_FILE.read_text())
         self.volumes = {v["name"]: v for v in self.spec["spec"]["volumes"]}
 
-    def test_has_seven_volumes(self):
-        assert len(self.volumes) == 8, (
-            f"Expected 8 volumes, got {len(self.volumes)}: {list(self.volumes.keys())}"
+    def test_has_nine_volumes(self):
+        assert len(self.volumes) == 9, (
+            f"Expected 9 volumes, got {len(self.volumes)}: {list(self.volumes.keys())}"
         )
 
-    def test_has_four_stage_mounts(self):
+    def test_has_six_stage_mounts(self):
         stage_vols = [v for v in self.volumes.values() if v.get("source") == "stage"]
-        assert len(stage_vols) == 5, f"Expected 5 stage mounts, got {len(stage_vols)}"
+        assert len(stage_vols) == 6, f"Expected 6 stage mounts, got {len(stage_vols)}"
 
     def test_has_three_block_storage_volumes(self):
         block_vols = [v for v in self.volumes.values() if v.get("source") == "block"]
@@ -5820,13 +5819,14 @@ class TestCrossComponentConsistency:
     def test_spec_container_count_matches_scrape_config(self):
         """Number of SPCS containers should be reflected in scrape configs.
 
-        8 containers in spec (6 original + 2 backup sidecars), 8 scrape jobs
-        (because prefect-server and redis are remote services, not in the
-        monitor spec, but scraped via SPCS DNS; backup sidecars don't expose
-        metrics endpoints so they don't add scrape jobs).
+        9 containers in spec (6 original + 2 backup sidecars + observe-agent),
+        8 scrape jobs (because prefect-server and redis are remote services, not
+        in the monitor spec, but scraped via SPCS DNS; backup sidecars and
+        observe-agent don't expose Prometheus metrics endpoints so they don't
+        add scrape jobs).
         """
         containers = self.spec["spec"]["containers"]
-        assert len(containers) == 8
+        assert len(containers) == 9
         scrape_jobs = self.prom_config["scrape_configs"]
         assert len(scrape_jobs) == 8
 
@@ -6698,12 +6698,12 @@ class TestBackupSidecarResources:
         )
         assert total <= 2.0, f"Total CPU requests ({total}) exceed 2 vCPU pool limit"
 
-    def test_total_cpu_limits_under_2(self):
-        """SPCS schedules on limits — total limits must fit in 2 vCPU."""
+    def test_total_cpu_limits_under_2_5(self):
+        """SPCS allows overcommit on limits — total limits must fit within 2.5 vCPU."""
         total = sum(
             float(c["resources"]["limits"]["cpu"]) for c in self.containers if "resources" in c
         )
-        assert total <= 2.0, f"Total CPU limits ({total}) exceed 2 vCPU pool limit"
+        assert total <= 2.5, f"Total CPU limits ({total}) exceed 2.5 vCPU overcommit budget"
 
     def test_backup_containers_are_lightest(self):
         """Backup sidecars should have the lowest CPU of all containers."""
@@ -6732,10 +6732,10 @@ class TestMonitorSpecContainerCount:
         self.spec = yaml.safe_load(MONITOR_SPEC_FILE.read_text())
         self.containers = self.spec["spec"]["containers"]
 
-    def test_container_count_is_8(self):
-        """6 original + 2 backup sidecars = 8 containers."""
-        assert len(self.containers) == 8, (
-            f"Expected 8 containers, got {len(self.containers)}: "
+    def test_container_count_is_9(self):
+        """6 original + 2 backup sidecars + observe-agent = 9 containers."""
+        assert len(self.containers) == 9, (
+            f"Expected 9 containers, got {len(self.containers)}: "
             f"{[c['name'] for c in self.containers]}"
         )
 

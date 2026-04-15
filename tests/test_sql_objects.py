@@ -19,12 +19,13 @@ EXPECTED_SQL_FILES = [
     "07_create_services_gcp.sql",
     "07b_update_services.sql",
     "08_validate.sql",
+    "08b_setup_o4s.sql",
     "09_suspend_all.sql",
     "10_resume_all.sql",
 ]
 
 # Long-running SPCS services (excludes one-shot jobs like PF_MIGRATE, PF_DEPLOY_JOB)
-LONG_RUNNING_SERVICES = ["PF_REDIS", "PF_SERVER", "PF_SERVICES", "PF_WORKER"]
+LONG_RUNNING_SERVICES = ["PF_REDIS", "PF_SERVER", "PF_SERVICES", "PF_WORKER", "PF_MONITOR"]
 
 
 class TestSQLDiscovery:
@@ -321,7 +322,7 @@ class TestSQLServiceUpdate:
         assert "SPECIFICATION_FILE" in content
 
     def test_uses_from_stage_syntax(self, sql_files):
-        """ALTER SERVICE (spec updates) must use FROM @PREFECT_SPECS syntax."""
+        """ALTER SERVICE (spec updates) must use FROM @<stage> syntax."""
         content = sql_files["07b_update_services.sql"]
         assert "FROM @PREFECT_SPECS" in content
         # Count only spec-update ALTER SERVICE lines (exclude ALTER SERVICE ... SET
@@ -332,9 +333,10 @@ class TestSQLServiceUpdate:
             for line in lines
             if "ALTER SERVICE" in line and not line.strip().startswith("--") and "SET" not in line
         )
-        from_count = content.count("FROM @PREFECT_SPECS")
+        # Count FROM @<any_stage> references (PREFECT_SPECS for core, MONITOR_STAGE for monitor)
+        from_count = len(re.findall(r"FROM @\w+", content))
         assert alter_count == from_count, (
-            f"Each spec-update ALTER SERVICE must have FROM @PREFECT_SPECS: "
+            f"Each spec-update ALTER SERVICE must have FROM @<stage>: "
             f"{alter_count} ALTERs but {from_count} FROM clauses"
         )
 
@@ -375,6 +377,7 @@ class TestSQLServiceUpdate:
             "pf_server.yaml",
             "pf_services.yaml",
             "pf_worker.yaml",
+            "specs/pf_monitor.yaml",
         }
         assert update_specs == long_running_specs, (
             f"07b should cover exactly the long-running service specs. "

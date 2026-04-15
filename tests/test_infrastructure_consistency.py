@@ -133,17 +133,22 @@ class TestDatabaseNameConsistency:
                 pass  # Ok for suspend/resume scripts
 
     def test_worker_spec_has_stage_volume_backup(self, specs):
-        """Worker has stage volume as backup for git_clone failures.
+        """Worker has stage volumes: flows stage backup + observe-agent config.
 
         The stage mount at /opt/prefect/flows provides a fallback when
-        GIT_REPO_URL is not configured. Both volumeMounts and volumes
-        must be present to avoid the stage-mount-v2-sidecar crash.
+        GIT_REPO_URL is not configured. The observe-config stage mount
+        provides the observe-agent sidecar configuration.
+        Both volumeMounts and volumes must be present to avoid the
+        stage-mount-v2-sidecar crash.
         """
         volumes = specs["pf_worker"]["spec"].get("volumes", [])
         stage_volumes = [v for v in volumes if v.get("source") == "stage"]
-        assert len(stage_volumes) == 1, "Worker should have exactly one stage volume"
-        assert "PREFECT_FLOWS" in stage_volumes[0].get("stageConfig", {}).get("name", ""), (
-            "Stage volume should reference @PREFECT_FLOWS"
+        assert len(stage_volumes) == 2, (
+            f"Worker should have exactly two stage volumes (flows + observe-config), got {len(stage_volumes)}"
+        )
+        stage_names = {v.get("stageConfig", {}).get("name", "") for v in stage_volumes}
+        assert any("PREFECT_FLOWS" in n for n in stage_names), (
+            "Stage volumes should include @PREFECT_FLOWS"
         )
         # Verify volumeMounts exist (prevents sidecar crash)
         container = specs["pf_worker"]["spec"]["containers"][0]

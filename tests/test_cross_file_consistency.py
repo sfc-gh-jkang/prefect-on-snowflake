@@ -31,6 +31,11 @@ def specs():
     result = {}
     for f in SPECS_DIR.glob("*.yaml"):
         result[f.stem] = yaml.safe_load(f.read_text())
+    # Also include monitoring specs (e.g. pf_monitor.yaml from monitoring/specs/)
+    monitoring_specs = MONITORING_DIR / "specs"
+    if monitoring_specs.is_dir():
+        for f in monitoring_specs.glob("*.yaml"):
+            result[f.stem] = yaml.safe_load(f.read_text())
     return result
 
 
@@ -214,7 +219,7 @@ class TestUpdateServiceConsistency:
     """Verify 07b_update_services.sql references match actual spec files
     and covers all long-running services."""
 
-    LONG_RUNNING_SERVICES = ["PF_REDIS", "PF_SERVER", "PF_SERVICES", "PF_WORKER"]
+    LONG_RUNNING_SERVICES = ["PF_REDIS", "PF_SERVER", "PF_SERVICES", "PF_WORKER", "PF_MONITOR"]
 
     def test_07b_spec_filenames_match_actual_specs(self, specs):
         """Every SPECIFICATION_FILE in 07b must point to an actual spec file."""
@@ -222,7 +227,8 @@ class TestUpdateServiceConsistency:
         spec_refs = re.findall(r"SPECIFICATION_FILE\s*=\s*'([^']+)'", update_sql)
         assert spec_refs, "07b_update_services.sql has no SPECIFICATION_FILE references"
         for ref in spec_refs:
-            spec_name = ref.replace(".yaml", "")
+            # Strip path prefix (e.g. "specs/pf_monitor.yaml" → "pf_monitor") and extension
+            spec_name = ref.split("/")[-1].replace(".yaml", "")
             assert spec_name in specs, (
                 f"07b_update_services.sql references '{ref}' but file not in specs/"
             )
@@ -248,7 +254,9 @@ class TestUpdateServiceConsistency:
         referenced in 07b_update_services.sql. A new spec added to specs/ but
         missing from 07b would go undetected without this test."""
         update_sql = (SQL_DIR / "07b_update_services.sql").read_text()
-        spec_refs = set(re.findall(r"SPECIFICATION_FILE\s*=\s*'([^']+)'", update_sql))
+        raw_refs = re.findall(r"SPECIFICATION_FILE\s*=\s*'([^']+)'", update_sql)
+        # Normalize to bare filenames (strip path prefixes like "specs/")
+        spec_refs = {ref.split("/")[-1] for ref in raw_refs}
         # Long-running service specs follow naming convention pf_<name>.yaml
         # Exclude job/utility specs (pf_migrate, pf_trigger_job, pf_deploy_*)
         # Exclude pf_postgres — GCP-only, not in primary 07b (AWS/Azure) update script

@@ -186,21 +186,22 @@ class TestSpecVolumes:
         assert "volumeMounts" in container, f"{name}: missing volumeMounts"
 
     def test_worker_has_stage_volume_as_backup(self, spec_files):
-        """Worker has a stage volume as backup for git_clone failures.
+        """Worker has stage volumes for flows backup and observe-agent config.
 
         Primary code delivery is git_clone (prefect.yaml). The stage mount at
         /opt/prefect/flows is a fallback when GIT_REPO_URL is not configured.
+        The observe-config stage mount provides observe-agent sidecar config.
         Both volumeMounts and volumes must be present to avoid sidecar crashes.
         """
         worker = spec_files["pf_worker"]
         volumes = worker["spec"].get("volumes", [])
         stage_volumes = [v for v in volumes if v.get("source") == "stage" or "stageConfig" in v]
-        assert len(stage_volumes) == 1, (
-            "Worker should have exactly one stage volume as backup for git_clone"
+        assert len(stage_volumes) == 2, (
+            "Worker should have exactly two stage volumes (flows + observe-config)"
         )
-        vol = stage_volumes[0]
-        assert "PREFECT_FLOWS" in vol.get("stageConfig", {}).get("name", ""), (
-            "Stage volume should reference @PREFECT_FLOWS"
+        stage_names = {v.get("stageConfig", {}).get("name", "") for v in stage_volumes}
+        assert any("PREFECT_FLOWS" in n for n in stage_names), (
+            "Stage volumes should include @PREFECT_FLOWS"
         )
 
         # volumeMounts must exist — without them the sidecar crashes
