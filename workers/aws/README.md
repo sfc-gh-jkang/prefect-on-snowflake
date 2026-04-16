@@ -104,6 +104,10 @@ export GIT_ACCESS_TOKEN="<your-git-token>"
 export SNOWFLAKE_ACCOUNT="<ORGNAME-ACCTNAME>"
 export SNOWFLAKE_USER="PREFECT_SVC"
 
+# Monitoring labels — MUST be unique per VM (see below)
+export WORKER_LOCATION="<cloud-region-suffix>"   # e.g. aws-us-west-2-backup
+export WORKER_POOL="<pool-suffix>"                # e.g. aws-pool-backup
+
 # Optional overrides for the setup script:
 export AWS_INSTANCE_NAME="<your-prefix>-prefect-worker-<pool-name>"
 # Override the pool name in docker-compose if different from aws-pool:
@@ -248,6 +252,7 @@ healthy, but connection refused or timeout (hung process) as unhealthy. After
 | Flows crash with empty `GIT_REPO_URL` | Ensure `GIT_REPO_URL` and `GIT_BRANCH` are in the `.env` on the instance |
 | SSH times out | Instance is on private subnet with no public IP; use SSM (see below) |
 | SCP blocks VPC creation | Use existing shared VPC (already configured in setup script defaults) |
+| "Out of order sample" errors in SPCS Prometheus | Two VMs have duplicate `WORKER_LOCATION`/`WORKER_POOL` labels — fix by giving each VM unique values, clearing the Prometheus WAL, and restarting |
 
 ## Accessing EC2 Instances
 

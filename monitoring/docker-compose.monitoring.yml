@@ -77,6 +77,8 @@ services:
     volumes:
       - ./vm-agents/prometheus-agent.yml:/etc/prometheus/prometheus-agent.yml:ro
     environment:
+      # CRITICAL: Must be unique per VM — duplicate values cause "Out of order
+      # sample" errors at the SPCS Prometheus receiver. See prometheus-agent.yml.
       WORKER_LOCATION: "${WORKER_LOCATION:-unknown}"
       WORKER_POOL: "${WORKER_POOL:-unknown}"
     depends_on:

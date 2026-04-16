@@ -10,7 +10,21 @@ global:
   evaluation_interval: 15s
 
   external_labels:
-    # Set per-VM via environment variables (required in .env / compose)
+    # CRITICAL: These labels MUST be unique across every VM that remote_writes
+    # to the same SPCS Prometheus receiver. Duplicate labels cause identical
+    # time series from multiple sources, which triggers "Out of order sample"
+    # errors (thousands per minute) and drops metrics silently.
+    #
+    # Examples of CORRECT unique values across 3 VMs:
+    #   VM1: WORKER_LOCATION=aws-us-west-2       WORKER_POOL=aws-pool
+    #   VM2: WORKER_LOCATION=aws-us-west-2-backup WORKER_POOL=aws-pool-backup
+    #   VM3: WORKER_LOCATION=gcp-us-central1      WORKER_POOL=gcp-pool
+    #
+    # After changing these labels on a running VM, you MUST clear the
+    # Prometheus WAL to avoid stale series with old labels:
+    #   docker compose ... down
+    #   docker volume rm <project>_prometheus-agent-data   # or prune
+    #   docker compose ... up -d
     worker_location: "${WORKER_LOCATION}"
     worker_pool: "${WORKER_POOL}"
 

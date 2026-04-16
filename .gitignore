@@ -52,8 +52,12 @@ dashboard/.streamlit/secrets.toml
 # Snow CLI output
 dashboard/output/
 
-# Claude agent (may contain credentials)
+# Claude / Cursor agent (may contain credentials or local config)
 .claude/settings.local.json
+.cursor/
+
+# Blog drafts (not part of the platform)
+blog/
 
 # Ruff cache
 .ruff_cache/
