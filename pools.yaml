@@ -28,6 +28,15 @@ pools:
     tag: spcs
     min_instances: 1
     max_instances: 3
+    # OTel child-process propagation: opentelemetry-instrument configures the
+    # parent worker process but deliberately strips its sitecustomize directory
+    # from PYTHONPATH after init.  Prefect ProcessWorker builds child env as
+    # {**os.environ, **deployment_env}, so deployment_env wins.  Setting
+    # PYTHONPATH here (via job_variables.env) ensures every child flow-run
+    # subprocess auto-instruments and generates trace spans.
+    job_variables:
+      env:
+        PYTHONPATH: "/opt/prefect/.venv/lib/python3.12/site-packages/opentelemetry/instrumentation/auto_instrumentation"
 
   gcp:
     type: external

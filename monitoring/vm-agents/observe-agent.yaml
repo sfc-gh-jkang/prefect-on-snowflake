@@ -14,8 +14,13 @@ observe_url: "__OBSERVE_URL__"
 # Accept OTLP traces/metrics/logs from other containers (e.g. Prefect worker APM)
 forwarding:
   enabled: true
+  traces:
+    enabled: true
   metrics:
+    enabled: true
     output_format: otel
+  logs:
+    enabled: true
   endpoints:
     grpc: 0.0.0.0:4317
     http: 0.0.0.0:4318
@@ -46,9 +51,19 @@ resource_attributes:
   service.name: prefect.logs
   deployment.environment.name: prefect-worker
 
-# Docker container metrics + logs via OTel collector overrides
+# Docker container metrics + logs + APM traces via OTel collector overrides.
+# The OTLP receiver MUST be explicitly defined here so the config merge
+# registers it for the traces data type (not just logs).  Without this,
+# the OTLP gRPC/HTTP servers only start for data_type:"logs" and silently
+# drop all incoming trace spans.  See observe-agent-spcs.yaml for details.
 otel_config_overrides:
   receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
     docker_stats:
       endpoint: unix:///var/run/docker.sock
       collection_interval: 30s
@@ -87,3 +102,7 @@ otel_config_overrides:
         receivers: [filelog/containers]
         processors: [memory_limiter, resourcedetection, resourcedetection/cloud, batch]
         exporters: [otlphttp/observe, count]
+      traces/forward:
+        receivers: [otlp]
+        processors: [memory_limiter, resourcedetection, resourcedetection/cloud, batch]
+        exporters: [otlphttp/observe]

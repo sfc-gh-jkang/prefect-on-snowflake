@@ -191,18 +191,26 @@ snow stage copy "$PROJECT_DIR/monitoring/loki/rules/fake/alerts.yaml" \
 # to Observe, and no OTLP traces are forwarded (Tracing/Span dataset stays empty).
 OBS_TOKEN="${OBSERVE_TOKEN:-}"
 OBS_URL="${OBSERVE_COLLECTION_URL:-}"
+OBS_DS_TOKEN="${OBSERVE_DATASTREAM_TOKEN:-}"
 if [[ -n "$OBS_TOKEN" && -n "$OBS_URL" ]]; then
     OBS_SRC="$PROJECT_DIR/monitoring/spcs-agents/observe-agent-spcs.yaml"
     OBS_TMP="$(mktemp)"
     sed \
       -e "s|__OBSERVE_TOKEN__|${OBS_TOKEN}|" \
       -e "s|__OBSERVE_URL__|${OBS_URL}|" \
+      -e "s|__OBSERVE_DATASTREAM_TOKEN__|${OBS_DS_TOKEN}|" \
       "$OBS_SRC" > "$OBS_TMP"
     snow stage copy "$OBS_TMP" \
       "@${DB}.${SCHEMA}.${STAGE}/observe-agent/observe-agent.yaml" \
       --connection "$CONNECTION" --overwrite
     rm -f "$OBS_TMP"
     echo "  Uploaded observe-agent config with credentials."
+    if [[ -z "$OBS_DS_TOKEN" ]]; then
+        echo "  WARNING: OBSERVE_DATASTREAM_TOKEN not set in .env"
+        echo "  The observe-agent will get 401 from Observe's /v2/otel endpoint."
+        echo "  Create a datastream token for the 'Tracing/Span' datastream in Observe"
+        echo "  and set OBSERVE_DATASTREAM_TOKEN in .env."
+    fi
 else
     echo "  WARNING: OBSERVE_TOKEN or OBSERVE_COLLECTION_URL not set in .env"
     echo "  Observe agent will start but cannot forward traces to Observe."

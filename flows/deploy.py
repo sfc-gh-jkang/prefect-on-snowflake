@@ -502,6 +502,13 @@ async def deploy_to_pool(
             schedules = spec.build_schedules()
             conc_limit, conc_options = spec.build_concurrency_options()
 
+            # Merge pool-level job_variables (e.g., OTel PYTHONPATH for SPCS)
+            # with spec-level overrides.  Spec values take precedence.
+            merged_job_variables = {
+                **pool_cfg.get("job_variables", {}),
+                **(spec.job_variables or {}),
+            }
+
             deployment_id = await client.create_deployment(
                 flow_id=flow_id,
                 name=deploy_name,
@@ -518,7 +525,7 @@ async def deploy_to_pool(
                 version=spec.version or git_sha,
                 paused=spec.paused,
                 enforce_parameter_schema=spec.enforce_parameter_schema,
-                job_variables=spec.job_variables,
+                job_variables=merged_job_variables,
             )
 
             # Create event-trigger automations (idempotent: replaces by name)

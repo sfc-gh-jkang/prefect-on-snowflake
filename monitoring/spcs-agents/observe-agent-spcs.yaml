@@ -44,14 +44,23 @@ resource_attributes:
   service.name: prefect-spcs-observe-relay
   deployment.environment.name: spcs
 
-# Explicit traces pipeline — the forwarding config only creates a logs/forward
-# pipeline in observe-agent 2.0.0 despite traces.enabled: true.  This override
-# wires the OTLP receiver (already listening on 4317/4318) into a traces
-# pipeline that exports to Observe via the built-in otlphttp/observe exporter.
+# Override the otlphttp/observe exporter auth header to use an Observe
+# datastream token.  The observe-agent internally constructs the Authorization
+# header from the top-level `token` field as "Bearer <customer_id>:<api_key>",
+# but Observe's /v2/otel endpoint rejects this format with 401.
+# The datastream token is required for auth to pass.
+#
+# IMPORTANT: The datastream token must be for a datastream that has OTLP
+# trace processing enabled.  If traces appear in the wrong datastream or
+# not at all in Tracing/Span, check the datastream configuration in Observe.
+#
+# IMPORTANT: Only override the exporter — do NOT re-declare receivers or
+# pipelines here, as that causes a config merge conflict that breaks the
+# otlp receiver's trace data_type registration.
 otel_config_overrides:
-  service:
-    pipelines:
-      traces/forward:
-        receivers: [otlp]
-        processors: [memory_limiter, resourcedetection, resourcedetection/cloud, batch]
-        exporters: [otlphttp/observe]
+  exporters:
+    otlphttp/observe:
+      headers:
+        authorization: "Bearer __OBSERVE_DATASTREAM_TOKEN__"
+
+debug: false

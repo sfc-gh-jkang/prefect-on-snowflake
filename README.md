@@ -2558,7 +2558,7 @@ views, event tables, SPCS metering) and OTel-based APM.
 | Path | Source | Token Type | Observe Datasets Created |
 |------|--------|------------|--------------------------|
 | **O4S** | Snowflake ACCOUNT_USAGE views (QUERY_HISTORY, LOGIN_HISTORY, etc.) | Snowflake app ingest token (`ds1Bqq...`) | `snowflake/*` (lowercase — e.g., `snowflake/QUERY_HISTORY`, `snowflake/Account`) |
-| **OTel** | PF_WORKER traces (gRPC → observe-agent sidecar → Observe) | Observe API token (baked into observe-agent config) | `otelspan` in datastream raw dataset (routed to `Tracing/*` by Observe pipeline) |
+| **OTel** | PF_WORKER traces (HTTP/protobuf → observe-agent sidecar → Observe) | Datastream token (`ds1xxx...`) for Tracing/Span datastream | `Tracing/Span` dataset (routed by Observe OTLP trace processing) |
 | **Prometheus** | All Prometheus-scraped metrics (Prefect, Redis, Postgres, VM workers) | Datastream ingest token (`ds1la6...`) | Prometheus metrics in the datastream's raw dataset |
 | **Logs** | SPCS log poller + VM Promtail (Loki-compatible push) | Datastream ingest token (`ds1la6...`) | Log data in the datastream's raw dataset |
 
@@ -2566,7 +2566,7 @@ views, event tables, SPCS metering) and OTel-based APM.
 
 SPCS workers export OpenTelemetry traces to a **co-located observe-agent sidecar** running
 in the same PF_WORKER pod. The sidecar relays traces to Observe's collect endpoint using
-the Observe API token baked into its config at deploy time.
+a **datastream token** baked into its config at deploy time.
 
 **Why a sidecar relay (not direct export)?** Two issues prevent PF_WORKER from exporting
 OTLP traces directly to Observe's collect endpoint:
@@ -2581,35 +2581,85 @@ OTLP traces directly to Observe's collect endpoint:
    endpoint.
 
 **The solution:** The observe-agent runs as a **sidecar container** inside PF_WORKER's pod.
-The worker sends traces via gRPC to `localhost:4317` (no auth needed for localhost). The
-observe-agent authenticates with Observe using its baked-in API token and forwards traces
+The worker sends traces via HTTP/protobuf to `localhost:4318` (no auth needed for localhost).
+The observe-agent authenticates with Observe using a datastream token and forwards traces
 to the collect endpoint through `MONITOR_EGRESS_EAI`.
+
+**Why SimpleSpanProcessor (not BatchSpanProcessor)?** The default OTel `BatchSpanProcessor`
+uses urllib3's persistent connection pool. Between SPCS containers the TCP connection gets
+reset, and once poisoned, every subsequent export fails with `ConnectionResetError(104)` and
+never recovers. `SimpleSpanProcessor` creates a fresh HTTP connection per export, avoiding
+this entirely. Both the parent worker (`otel_entrypoint.py`) and child flow-run processes
+(`otel_sitecustomize.py`) use `SimpleSpanProcessor`.
+
+**Architecture:**
+
+```
+┌─────────────────────────────── PF_WORKER pod ───────────────────────────────┐
+│                                                                             │
+│  ┌─ pf-worker container ──────────────────────────┐                         │
+│  │                                                 │                        │
+│  │  otel_entrypoint.py (parent)                    │   OTLP/HTTP            │
+│  │    └─ SimpleSpanProcessor + OTLPSpanExporter ───┼──► localhost:4318       │
+│  │                                                 │                        │
+│  │  child flow-run process                         │   OTLP/HTTP            │
+│  │    └─ sitecustomize.py (via PYTHONPATH)          │                        │
+│  │       └─ SimpleSpanProcessor + OTLPSpanExporter ┼──► localhost:4318       │
+│  └─────────────────────────────────────────────────┘         │              │
+│                                                              ▼              │
+│  ┌─ observe-agent container ──────────────────────────────────┐             │
+│  │  OTLP receiver (4318) → traces/forward pipeline            │             │
+│  │    → otlphttp/observe exporter                             │             │
+│  │      (Authorization: Bearer <datastream_token>)            │             │
+│  └────────────────────────┬───────────────────────────────────┘             │
+│                           │                                                 │
+└───────────────────────────┼─────────────────────────────────────────────────┘
+                            │ MONITOR_EGRESS_EAI
+                            ▼
+                  Observe collect endpoint
+                    └─ Tracing/Span datastream (42986179)
+                       └─ Tracing/Span dataset
+```
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `images/prefect/otel_entrypoint.py` | Parent worker OTel setup: `SimpleSpanProcessor`, sets `PYTHONPATH` for children |
+| `images/prefect/otel_sitecustomize.py` | Child process OTel setup: `SimpleSpanProcessor`, disables metrics/logs export |
+| `images/prefect/Dockerfile` | Copies both files, installs sitecustomize in `/opt/prefect/otel_sitecustomize/` |
+| `specs/pf_worker.yaml` | Worker spec with OTel env vars + observe-agent sidecar |
+| `monitoring/spcs-agents/observe-agent-spcs.yaml` | Observe-agent config with datastream token override |
+| `monitoring/deploy_monitoring.sh` | Bakes tokens/URLs into observe-agent config at deploy time |
 
 **Relevant env vars in pf_worker.yaml:**
 
 ```yaml
 OTEL_SERVICE_NAME: "prefect-worker-spcs"
-OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
-OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4317"
+OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318"
 OTEL_TRACES_EXPORTER: "otlp"
 OTEL_METRICS_EXPORTER: "none"
 OTEL_LOGS_EXPORTER: "none"
+OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: "system_metrics"
 OTEL_RESOURCE_ATTRIBUTES: "deployment.environment.name=spcs,service.namespace=prefect"
 OTEL_TRACES_SAMPLER: "parentbased_always_on"
+# Custom env var — otel_entrypoint.py copies to PYTHONPATH after its own setup
+OTEL_PYTHONPATH: "/opt/prefect/otel_sitecustomize"
 ```
 
-> **Note:** Use `OTEL_EXPORTER_OTLP_ENDPOINT` (generic base URL) not
-> `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (signal-specific). The gRPC exporter appends
-> the service path automatically. Use `grpc` protocol — the observe-agent's HTTP OTLP
-> receiver (port 4318) returns gRPC frames to HTTP/1.1 clients, causing
-> `ConnectionResetError` and `BadStatusLine` errors with the Python SDK.
+> **Note:** Use `http/protobuf` protocol on port 4318, not `grpc` on 4317. The worker
+> command is `python otel_entrypoint.py <prefect command>` — NOT `opentelemetry-instrument`.
+> The custom entrypoint configures `SimpleSpanProcessor` and then execs the wrapped command.
 
 **observe-agent sidecar config (`observe-agent-spcs.yaml`):**
 
 The observe-agent 2.0.0 `forwarding.traces.enabled: true` config only creates a
 `logs/forward` pipeline — **not** a traces pipeline. An explicit `otel_config_overrides`
 section is required to wire up the OTLP receiver to the `otlphttp/observe` exporter for
-traces:
+traces. Additionally, Observe's `/v2/otel` endpoint **rejects** the native ingest token
+format (`Bearer <customer_id>:<api_key>`) — only datastream tokens work. The
+`otel_config_overrides` must override the authorization header:
 
 ```yaml
 forwarding:
@@ -2617,11 +2667,14 @@ forwarding:
   traces:
     enabled: true    # Required but NOT sufficient on its own
   endpoints:
-    grpc: 0.0.0.0:4317
     http: 0.0.0.0:4318
 
-# Explicit traces pipeline — forwarding config alone only creates logs/forward
+# Explicit traces pipeline + datastream token auth override
 otel_config_overrides:
+  exporters:
+    otlphttp/observe:
+      headers:
+        authorization: "Bearer __OBSERVE_DATASTREAM_TOKEN__"
   service:
     pipelines:
       traces/forward:
@@ -2630,35 +2683,54 @@ otel_config_overrides:
         exporters: [otlphttp/observe]
 ```
 
-**Setup requirements (3 things must all be true):**
+**Setup requirements (4 things must all be true):**
 
 | Requirement | Where | How to Verify |
 |-------------|-------|---------------|
-| `OBSERVE_TOKEN` + `OBSERVE_COLLECTION_URL` in `.env` | `.env` file | API token (`<customer_id> <token>`) and collect URL baked into observe-agent config by `deploy_monitoring.sh` |
+| `OBSERVE_TOKEN` + `OBSERVE_COLLECTION_URL` in `.env` | `.env` file | API token and collect URL baked into observe-agent config by `deploy_monitoring.sh` |
+| `OBSERVE_DATASTREAM_TOKEN` in `.env` | `.env` file | Datastream token for the **Tracing/Span** datastream (not O4S). Create via Observe UI or GraphQL API |
 | Observe-agent sidecar in PF_WORKER spec | `specs/pf_worker.yaml` | Second container `observe-agent` with config volume from `@MONITOR_STAGE/observe-agent/` |
 | EAI with Observe collect host on PF_WORKER | `MONITOR_EGRESS_EAI` | `DESCRIBE SERVICE PF_WORKER` must show `MONITOR_EGRESS_EAI` in EAI list |
 
 **How it flows at deploy time:**
 
-1. `.env` contains `OBSERVE_TOKEN` and `OBSERVE_COLLECTION_URL`
-2. `deploy_monitoring.sh` substitutes `__OBSERVE_TOKEN__` and `__OBSERVE_URL__` in `observe-agent-spcs.yaml` and uploads to `@MONITOR_STAGE/observe-agent/observe-agent.yaml`
+1. `.env` contains `OBSERVE_TOKEN`, `OBSERVE_COLLECTION_URL`, and `OBSERVE_DATASTREAM_TOKEN`
+2. `deploy_monitoring.sh` substitutes all three placeholders in `observe-agent-spcs.yaml` and uploads to `@MONITOR_STAGE/observe-agent/observe-agent.yaml`
 3. `pf_worker.yaml` mounts `@MONITOR_STAGE/observe-agent/` as a volume at `/etc/observe-agent`
-4. The observe-agent sidecar reads `/etc/observe-agent/observe-agent.yaml` with literal token/URL
+4. The observe-agent sidecar reads `/etc/observe-agent/observe-agent.yaml` with literal tokens/URL
+
+**How to create an Observe datastream token:**
+
+In the Observe UI: Datastreams → select "Tracing/Span" datastream → Tokens → Create Token.
+Or via GraphQL API:
+
+```graphql
+mutation {
+  createDatastreamToken(
+    datastreamId: "<TRACING_SPAN_DATASTREAM_ID>"
+    token: { name: "prefect-spcs-traces" }
+  ) { id secret datastreamId }
+}
+```
+
+The `secret` field in the response is the token value (format: `ds1xxxxx:yyyyyy`).
 
 **Troubleshooting:**
 
-- **`ConnectionResetError(104)` in PF_WORKER logs** → If pointing to `localhost:4318`,
-  switch to gRPC on `localhost:4317`. The observe-agent's HTTP receiver returns gRPC
-  frames. If pointing to an external host, the observe-agent sidecar is not running or
-  not ready (27s startup for resource detection).
-- **`BadStatusLine('\x00\x00\x06\x04...')`** → HTTP/2 gRPC frames being sent to an
-  HTTP/1.1 client. Switch from `http/protobuf` to `grpc` protocol.
+- **`ConnectionResetError(104)` in worker logs** → Ensure both `otel_entrypoint.py` (parent)
+  and `otel_sitecustomize.py` (children) use `SimpleSpanProcessor`. Check that
+  `OTEL_PYTHONPATH` points to `/opt/prefect/otel_sitecustomize` and that directory contains
+  the custom `sitecustomize.py`.
+- **401 Unauthenticated from observe-agent** → The Observe `/v2/otel` endpoint rejects
+  native ingest tokens. Ensure `otel_config_overrides` overrides the authorization header
+  with a **datastream token** (`Bearer ds1xxxxx:yyyyyy`), and that `OBSERVE_DATASTREAM_TOKEN`
+  is set in `.env`.
+- **Traces land in wrong dataset (e.g., O4S instead of Tracing/Span)** → The datastream
+  token determines routing. Ensure the token was created for the **Tracing/Span** datastream
+  (has OTLP trace processing enabled), not the O4S datastream.
 - **No traces in Observe** → Check observe-agent logs for `pipeline: "traces/forward"` in
   the memory_limiter startup lines. If missing, add `otel_config_overrides` section.
   Also verify `MONITOR_EGRESS_EAI` is in PF_WORKER's EAI list.
-- **Observe-agent starts but receiver shows `data_type: "logs"` only** → This is normal;
-  the OTLP receiver shares a single server across all signal types. Verify the traces
-  pipeline exists by checking for `traces/forward` in the processor startup logs.
 - **Config not picked up after update** → Stage-mounted volumes are read at container
   start. `ALTER SERVICE` with same spec digest doesn't restart containers. Use
   `ALTER SERVICE ... SUSPEND` then `RESUME` to force a fresh mount.

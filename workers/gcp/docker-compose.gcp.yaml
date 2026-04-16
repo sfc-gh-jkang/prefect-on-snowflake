@@ -62,10 +62,16 @@ services:
       SNOWFLAKE_DATABASE: "${SNOWFLAKE_DATABASE:-PREFECT_DB}"
       SNOWFLAKE_SCHEMA: "${SNOWFLAKE_SCHEMA:-PREFECT_SCHEMA}"
       SNOWFLAKE_ROLE: "${SNOWFLAKE_ROLE:-ACCOUNTADMIN}"
-      # OTel auto-instrumentation — traces/metrics sent to observe-agent via OTLP
+      # OTel auto-instrumentation — traces sent to observe-agent via OTLP gRPC.
+      # Metrics and logs exporters disabled to avoid spamming observe-agent with
+      # unsupported metric batches (ConnectionResetError on gRPC receiver).
       OTEL_SERVICE_NAME: "prefect-worker-gcp"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://observe-agent:4317"
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      OTEL_TRACES_EXPORTER: "otlp"
+      OTEL_METRICS_EXPORTER: "none"
+      OTEL_LOGS_EXPORTER: "none"
+      OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: "system_metrics"
       OTEL_RESOURCE_ATTRIBUTES: "deployment.environment.name=prefect-worker,service.namespace=prefect"
       OTEL_TRACES_SAMPLER: "parentbased_always_on"
     command: opentelemetry-instrument prefect worker start --pool gcp-pool --type process --with-healthcheck

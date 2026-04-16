@@ -6,7 +6,8 @@ spec:
       # ALTER SERVICE ... FROM @PREFECT_SPECS SPECIFICATION_FILE = 'pf_worker.yaml';
       image: /prefect_db/prefect_schema/prefect_repository/prefect-worker:latest
       command:
-        - /opt/prefect/.venv/bin/opentelemetry-instrument
+        - /opt/prefect/.venv/bin/python
+        - /opt/prefect/otel_entrypoint.py
         - /opt/prefect/.venv/bin/prefect
         - worker
         - start
@@ -29,25 +30,38 @@ spec:
         GIT_BRANCH: "main"
         PREFECT_WORKER_WEBSERVER_HOST: "0.0.0.0"
         PREFECT_WORKER_WEBSERVER_PORT: "8080"
-        # OTel auto-instrumentation — export traces via the co-located observe-agent
-        # sidecar running in this same pod.  The observe-agent listens on
-        # localhost:4318 (HTTP) and localhost:4317 (gRPC), authenticates with
-        # Observe using its baked-in token, and forwards traces to the Observe
-        # collect endpoint.  This avoids SPCS-to-internet OTLP timeout issues
-        # that occur when the worker tries to reach collect.observeinc.com
-        # directly through the EAI network path.
+        # OTel trace export — both parent worker and child flow-run processes
+        # use SimpleSpanProcessor (fresh HTTP connection per export) to avoid
+        # ConnectionResetError(104) from urllib3 connection pool poisoning
+        # between SPCS containers.  The parent uses otel_entrypoint.py; child
+        # processes pick up a custom sitecustomize.py via PYTHONPATH that also
+        # configures SimpleSpanProcessor.
+        #
+        # Both parent and child export to the co-located observe-agent sidecar
+        # at localhost:4318 (HTTP OTLP).  The observe-agent authenticates with
+        # Observe and forwards traces to the collect endpoint.
         OTEL_SERVICE_NAME: "prefect-worker-spcs"
-        OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
-        OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4317"
+        OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318"
         OTEL_TRACES_EXPORTER: "otlp"
         OTEL_METRICS_EXPORTER: "none"
         OTEL_LOGS_EXPORTER: "none"
-        # Disable system_metrics instrumentation — it creates an HTTP metric
-        # exporter that ignores OTEL_METRICS_EXPORTER=none and fails with
-        # ConnectionResetError against the observe-agent's gRPC-only receiver.
         OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: "system_metrics"
         OTEL_RESOURCE_ATTRIBUTES: "deployment.environment.name=spcs,service.namespace=prefect"
         OTEL_TRACES_SAMPLER: "parentbased_always_on"
+        # OTel child-process propagation — otel_entrypoint.py copies this to
+        # PYTHONPATH after configuring SimpleSpanProcessor for the parent.
+        # We use a custom env var (OTEL_PYTHONPATH) instead of PYTHONPATH
+        # directly because Python imports sitecustomize.py from PYTHONPATH
+        # during interpreter startup — BEFORE any user code runs.  If we
+        # set PYTHONPATH here, a sitecustomize.py would run before
+        # otel_entrypoint.py can configure SimpleSpanProcessor.
+        #
+        # Points to /opt/prefect/otel_sitecustomize/ which contains a custom
+        # sitecustomize.py that uses SimpleSpanProcessor (not BatchSpanProcessor)
+        # to avoid ConnectionResetError(104) from urllib3 connection pool
+        # poisoning between SPCS containers.
+        OTEL_PYTHONPATH: "/opt/prefect/otel_sitecustomize"
       secrets:
         - snowflakeSecret:
             objectName: git_access_token

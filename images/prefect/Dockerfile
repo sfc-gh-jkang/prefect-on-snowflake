@@ -25,6 +25,17 @@ RUN OTEL_PKGS=$(uv run opentelemetry-bootstrap --action=requirements 2>/dev/null
 # uv venv is the runtime environment
 ENV PATH="/opt/prefect/.venv/bin:$PATH"
 
+# Custom OTel entrypoint — uses SimpleSpanProcessor instead of
+# BatchSpanProcessor to avoid ConnectionResetError(104) between SPCS
+# containers (urllib3 persistent connection pool gets poisoned).
+COPY otel_entrypoint.py /opt/prefect/otel_entrypoint.py
+
+# Custom sitecustomize.py for child flow-run processes — also uses
+# SimpleSpanProcessor.  Installed as sitecustomize.py in its own directory
+# so it can be activated via PYTHONPATH without conflicting with the stock
+# OTel auto-instrumentation sitecustomize.
+COPY otel_sitecustomize.py /opt/prefect/otel_sitecustomize/sitecustomize.py
+
 # Run as non-root
 RUN useradd -m prefect
 USER prefect
