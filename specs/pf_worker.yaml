@@ -4,7 +4,7 @@ spec:
       # Using :latest for dev convenience. For production rollback support,
       # pin to a git-SHA tag (e.g., prefect-worker:c8a115d) and update via
       # ALTER SERVICE ... FROM @PREFECT_SPECS SPECIFICATION_FILE = 'pf_worker.yaml';
-      image: /prefect_db/prefect_schema/prefect_repository/prefect-worker:latest
+      image: /prefect_db/prefect_schema/prefect_repository/prefect-worker:otel-final-1776424319
       command:
         - /opt/prefect/.venv/bin/python
         - /opt/prefect/otel_entrypoint.py
@@ -49,6 +49,11 @@ spec:
         OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: "system_metrics"
         OTEL_RESOURCE_ATTRIBUTES: "deployment.environment.name=spcs,service.namespace=prefect"
         OTEL_TRACES_SAMPLER: "parentbased_always_on"
+        # Exclude noisy internal endpoints from tracing.  The child flow-run
+        # process requests a CSRF token from the server, which returns 422
+        # (CSRF disabled for internal traffic).  Without this filter, every
+        # flow run produces 2 error spans that are false positives.
+        OTEL_PYTHON_EXCLUDED_URLS: "csrf-token"
         # OTel child-process propagation — otel_entrypoint.py copies this to
         # PYTHONPATH after configuring SimpleSpanProcessor for the parent.
         # We use a custom env var (OTEL_PYTHONPATH) instead of PYTHONPATH

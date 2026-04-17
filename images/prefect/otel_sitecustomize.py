@@ -24,6 +24,15 @@ import os
 
 def _configure():
     """Configure OTel with SimpleSpanProcessor and load instrumentors."""
+    # Suppress "coroutine '...' was never awaited" RuntimeWarning from asyncio.
+    # These appear during garbage collection of unawaited coroutines in Prefect's
+    # async internals and are harmless noise in worker logs.
+    import warnings
+
+    warnings.filterwarnings(
+        "ignore", category=RuntimeWarning, message="coroutine.*was never awaited"
+    )
+
     # Only configure if tracing is enabled via env vars
     if not os.environ.get("OTEL_TRACES_EXPORTER"):
         return

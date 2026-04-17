@@ -24,8 +24,7 @@ forwarding:
   traces:
     enabled: true
   metrics:
-    enabled: true
-    output_format: otel
+    enabled: false    # Prometheus remote_write handles metrics→Observe directly
   logs:
     enabled: true
   endpoints:
@@ -62,5 +61,17 @@ otel_config_overrides:
     otlphttp/observe:
       headers:
         authorization: "Bearer __OBSERVE_DATASTREAM_TOKEN__"
+    # Neuter the prometheusremotewrite/observe exporter.
+    # observe-agent v2.0.0 creates a metrics/forward pipeline even when
+    # forwarding.metrics.enabled is false.  The pipeline uses the native
+    # ingest token which Observe rejects with 401, and the Tracing/Span
+    # datastream rejects Prometheus data with 415.  Prometheus remote_write
+    # in prometheus.yml already handles metrics -> Observe correctly.
+    # We override the pipeline to use the debug exporter (already declared
+    # by observe-agent) which just drops the data silently.
+  service:
+    pipelines:
+      metrics/forward:
+        exporters: [debug]
 
 debug: false

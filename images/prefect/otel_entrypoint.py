@@ -36,6 +36,15 @@ import sys
 
 def configure_otel():
     """Configure OTel SDK with SimpleSpanProcessor before Prefect starts."""
+    # Suppress "coroutine '...' was never awaited" RuntimeWarning from asyncio.
+    # These appear during garbage collection of unawaited coroutines in Prefect's
+    # async internals and are harmless noise in worker logs.
+    import warnings
+
+    warnings.filterwarnings(
+        "ignore", category=RuntimeWarning, message="coroutine.*was never awaited"
+    )
+
     if not os.environ.get("OTEL_TRACES_EXPORTER"):
         return
 

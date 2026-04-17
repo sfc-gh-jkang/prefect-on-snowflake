@@ -92,11 +92,15 @@ if $BUILD_CORE; then
         --load "$PROJECT_DIR/images/prefect"
     PUSH_LIST+=("prefect-worker:latest" "prefect-worker:$GIT_SHA")
 
-    # Prefect server/services (stock image, re-tagged)
-    echo "  Pulling + tagging prefect:3-python3.12..."
-    docker pull --platform linux/amd64 prefecthq/prefect:3-python3.12
-    docker tag prefecthq/prefect:3-python3.12 "$REGISTRY/prefect:3-python3.12"
-    PUSH_LIST+=("prefect:3-python3.12")
+    # Prefect server/services (stock image, re-tagged).
+    # Pin to a specific version to avoid server/worker version skew.
+    # Update this when bumping Prefect — must match the version installed
+    # in images/prefect/Dockerfile (pulled via uv sync).
+    PREFECT_SERVER_TAG="3.6.26-python3.12"
+    echo "  Pulling + tagging prefect:$PREFECT_SERVER_TAG..."
+    docker pull --platform linux/amd64 "prefecthq/prefect:$PREFECT_SERVER_TAG"
+    docker tag "prefecthq/prefect:$PREFECT_SERVER_TAG" "$REGISTRY/prefect:$PREFECT_SERVER_TAG"
+    PUSH_LIST+=("prefect:$PREFECT_SERVER_TAG")
 fi
 
 # ---------------------------------------------------------------------------
