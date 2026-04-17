@@ -121,15 +121,19 @@ echo "[5/7] Uploading monitoring configs to stage ..."
 PROM_SRC="$PROJECT_DIR/monitoring/prometheus/prometheus.yml"
 OBS_METRICS_TOKEN="${OBSERVE_METRICS_TOKEN:-${OBSERVE_DATASTREAM_TOKEN:-}}"
 if [[ -n "${OBSERVE_COLLECTION_URL:-}" && -n "$OBS_METRICS_TOKEN" ]]; then
-    PROM_TMP="$(mktemp)"
+    # snow stage copy treats the destination as a directory, so we must give
+    # the temp file the correct basename before uploading.
+    PROM_TMPDIR="$(mktemp -d)"
     sed \
       -e "s|__OBSERVE_COLLECTION_URL__|${OBSERVE_COLLECTION_URL}|g" \
       -e "s|__OBSERVE_DATASTREAM_TOKEN__|${OBS_METRICS_TOKEN}|g" \
-      "$PROM_SRC" > "$PROM_TMP"
-    snow stage copy "$PROM_TMP" \
-      "@${DB}.${SCHEMA}.${STAGE}/prometheus/prometheus.yml" \
+      "$PROM_SRC" > "$PROM_TMPDIR/prometheus.yml"
+    snow sql -q "REMOVE @${DB}.${SCHEMA}.${STAGE}/prometheus/prometheus.yml;" \
+      --connection "$CONNECTION" || true
+    snow stage copy "$PROM_TMPDIR/prometheus.yml" \
+      "@${DB}.${SCHEMA}.${STAGE}/prometheus/" \
       --connection "$CONNECTION" --overwrite
-    rm -f "$PROM_TMP"
+    rm -rf "$PROM_TMPDIR"
     echo "  Uploaded prometheus.yml with Observe remote_write credentials."
 else
     snow stage copy "$PROM_SRC" \
@@ -196,16 +200,18 @@ OBS_DS_TOKEN="${OBSERVE_DATASTREAM_TOKEN:-}"
 # OBS_METRICS_TOKEN already set above for prometheus.yml
 if [[ -n "$OBS_TOKEN" && -n "$OBS_URL" ]]; then
     OBS_SRC="$PROJECT_DIR/monitoring/spcs-agents/observe-agent-spcs.yaml"
-    OBS_TMP="$(mktemp)"
+    OBS_TMPDIR="$(mktemp -d)"
     sed \
       -e "s|__OBSERVE_TOKEN__|${OBS_TOKEN}|" \
       -e "s|__OBSERVE_URL__|${OBS_URL}|" \
       -e "s|__OBSERVE_DATASTREAM_TOKEN__|${OBS_DS_TOKEN}|" \
-      "$OBS_SRC" > "$OBS_TMP"
-    snow stage copy "$OBS_TMP" \
-      "@${DB}.${SCHEMA}.${STAGE}/observe-agent/observe-agent.yaml" \
+      "$OBS_SRC" > "$OBS_TMPDIR/observe-agent.yaml"
+    snow sql -q "REMOVE @${DB}.${SCHEMA}.${STAGE}/observe-agent/observe-agent.yaml;" \
+      --connection "$CONNECTION" || true
+    snow stage copy "$OBS_TMPDIR/observe-agent.yaml" \
+      "@${DB}.${SCHEMA}.${STAGE}/observe-agent/" \
       --connection "$CONNECTION" --overwrite
-    rm -f "$OBS_TMP"
+    rm -rf "$OBS_TMPDIR"
     echo "  Uploaded observe-agent config with credentials."
     if [[ -z "$OBS_DS_TOKEN" ]]; then
         echo "  WARNING: OBSERVE_DATASTREAM_TOKEN not set in .env"
@@ -226,7 +232,7 @@ fi
 SMTP_USER="${GRAFANA_SMTP_USER:-CHANGE_ME@example.com}"
 SMTP_RECIPIENTS="${GRAFANA_SMTP_RECIPIENTS:-${GRAFANA_SMTP_USER:-CHANGE_ME@example.com}}"
 SPEC_SRC="$PROJECT_DIR/monitoring/specs/pf_monitor.yaml"
-SPEC_TMP="$(mktemp)"
+SPEC_TMPDIR="$(mktemp -d)"
 
 # Build Observe LOKI URL: <collection_url>/v1/http (poller appends /loki/api/v1/push)
 OBSERVE_LOKI_URL_VALUE=""
@@ -241,11 +247,13 @@ sed \
   -e "s|__OBSERVE_LOKI_URL__|${OBSERVE_LOKI_URL_VALUE}|g" \
   -e "s|__OBSERVE_DATASTREAM_TOKEN__|${OBSERVE_DATASTREAM_TOKEN:-}|g" \
   -e "s|__OBSERVE_METRICS_TOKEN__|${OBS_METRICS_TOKEN}|g" \
-  "$SPEC_SRC" > "$SPEC_TMP"
-snow stage copy "$SPEC_TMP" \
-  "@${DB}.${SCHEMA}.${STAGE}/specs/pf_monitor.yaml" \
+  "$SPEC_SRC" > "$SPEC_TMPDIR/pf_monitor.yaml"
+snow sql -q "REMOVE @${DB}.${SCHEMA}.${STAGE}/specs/pf_monitor.yaml;" \
+  --connection "$CONNECTION" || true
+snow stage copy "$SPEC_TMPDIR/pf_monitor.yaml" \
+  "@${DB}.${SCHEMA}.${STAGE}/specs/" \
   --connection "$CONNECTION" --overwrite
-rm -f "$SPEC_TMP"
+rm -rf "$SPEC_TMPDIR"
 
 echo "  Uploaded all configs + spec."
 
