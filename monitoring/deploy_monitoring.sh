@@ -119,11 +119,12 @@ echo "[5/7] Uploading monitoring configs to stage ..."
 # This enables dual-write of ALL Prometheus metrics to Observe, filling
 # Grafana dashboard gaps (flow runs, container CPU/memory, Postgres, Redis).
 PROM_SRC="$PROJECT_DIR/monitoring/prometheus/prometheus.yml"
-if [[ -n "${OBSERVE_COLLECTION_URL:-}" && -n "${OBSERVE_DATASTREAM_TOKEN:-}" ]]; then
+OBS_METRICS_TOKEN="${OBSERVE_METRICS_TOKEN:-${OBSERVE_DATASTREAM_TOKEN:-}}"
+if [[ -n "${OBSERVE_COLLECTION_URL:-}" && -n "$OBS_METRICS_TOKEN" ]]; then
     PROM_TMP="$(mktemp)"
     sed \
       -e "s|__OBSERVE_COLLECTION_URL__|${OBSERVE_COLLECTION_URL}|g" \
-      -e "s|__OBSERVE_DATASTREAM_TOKEN__|${OBSERVE_DATASTREAM_TOKEN}|g" \
+      -e "s|__OBSERVE_DATASTREAM_TOKEN__|${OBS_METRICS_TOKEN}|g" \
       "$PROM_SRC" > "$PROM_TMP"
     snow stage copy "$PROM_TMP" \
       "@${DB}.${SCHEMA}.${STAGE}/prometheus/prometheus.yml" \
@@ -192,6 +193,7 @@ snow stage copy "$PROJECT_DIR/monitoring/loki/rules/fake/alerts.yaml" \
 OBS_TOKEN="${OBSERVE_TOKEN:-}"
 OBS_URL="${OBSERVE_COLLECTION_URL:-}"
 OBS_DS_TOKEN="${OBSERVE_DATASTREAM_TOKEN:-}"
+# OBS_METRICS_TOKEN already set above for prometheus.yml
 if [[ -n "$OBS_TOKEN" && -n "$OBS_URL" ]]; then
     OBS_SRC="$PROJECT_DIR/monitoring/spcs-agents/observe-agent-spcs.yaml"
     OBS_TMP="$(mktemp)"
@@ -238,6 +240,7 @@ sed \
   -e "s|GF_SMTP_ALERT_RECIPIENTS: \"CHANGE_ME@example.com\"|GF_SMTP_ALERT_RECIPIENTS: \"${SMTP_RECIPIENTS}\"|" \
   -e "s|__OBSERVE_LOKI_URL__|${OBSERVE_LOKI_URL_VALUE}|g" \
   -e "s|__OBSERVE_DATASTREAM_TOKEN__|${OBSERVE_DATASTREAM_TOKEN:-}|g" \
+  -e "s|__OBSERVE_METRICS_TOKEN__|${OBS_METRICS_TOKEN}|g" \
   "$SPEC_SRC" > "$SPEC_TMP"
 snow stage copy "$SPEC_TMP" \
   "@${DB}.${SCHEMA}.${STAGE}/specs/pf_monitor.yaml" \

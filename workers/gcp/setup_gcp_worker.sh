@@ -98,11 +98,16 @@ gcloud compute scp \
 # The observe-agent does NOT read env vars — credentials must be literal values in the YAML.
 OBS_TOKEN="${OBSERVE_TOKEN:-}"
 OBS_URL="${OBSERVE_COLLECTION_URL:-}"
+OBS_DS_TOKEN="${OBSERVE_DATASTREAM_TOKEN:-}"
+OBS_METRICS_TOKEN="${OBSERVE_METRICS_TOKEN:-${OBSERVE_DATASTREAM_TOKEN:-}}"
 OBS_TMP="$(mktemp)"
 if [[ -n "$OBS_TOKEN" && -n "$OBS_URL" ]]; then
     sed \
       -e "s|__OBSERVE_TOKEN__|${OBS_TOKEN}|" \
       -e "s|__OBSERVE_URL__|${OBS_URL}|" \
+      -e "s|__OBSERVE_DATASTREAM_TOKEN__|${OBS_DS_TOKEN}|" \
+      -e "s|__OBSERVE_METRICS_TOKEN__|${OBS_METRICS_TOKEN}|" \
+      -e "s|__OBSERVE_COLLECTION_URL__|${OBS_URL}|" \
       "$REPO_ROOT/monitoring/vm-agents/observe-agent.yaml" > "$OBS_TMP"
     echo "  Observe agent config: credentials substituted."
 else

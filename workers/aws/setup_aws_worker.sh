@@ -62,6 +62,8 @@ MONITOR_LOKI="${SPCS_MONITOR_LOKI_ENDPOINT:-}"
 # Observe (optional — dual-write telemetry to Observe for evaluation)
 OBS_TOKEN="${OBSERVE_TOKEN:-}"
 OBS_URL="${OBSERVE_COLLECTION_URL:-}"
+OBS_DS_TOKEN="${OBSERVE_DATASTREAM_TOKEN:-}"
+OBS_METRICS_TOKEN="${OBSERVE_METRICS_TOKEN:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -284,6 +286,8 @@ WORKER_POOL=aws-pool
 DNS_RESOLVER=169.254.169.253
 OBSERVE_TOKEN=__OBSERVE_TOKEN__
 OBSERVE_COLLECTION_URL=__OBSERVE_COLLECTION_URL__
+OBSERVE_DATASTREAM_TOKEN=__OBSERVE_DATASTREAM_TOKEN__
+OBSERVE_METRICS_TOKEN=__OBSERVE_METRICS_TOKEN__
 ENVEOF
 chmod 600 .env
 
@@ -418,39 +422,48 @@ scrape_configs:
           format: RFC3339Nano
 PROMTAILEOF
 
-    # Observe Agent config (dual-write to Observe alongside Grafana stack)
-    # IMPORTANT: token and observe_url MUST be literal values in this file.
-    # The observe-agent does NOT read OBSERVE_TOKEN/OBSERVE_URL env vars.
-    # Placeholders are replaced by bash parameter expansion after the heredoc.
+    # Observe Agent config — must match monitoring/vm-agents/observe-agent.yaml.
+    # Credentials are placeholders replaced by bash parameter expansion below.
+    # The observe-agent does NOT read env vars — values must be literal in YAML.
+    #
+    # KEY FIXES vs original inline config:
+    #   - forwarding.metrics/logs disabled (handled by OTel pipeline overrides)
+    #   - self_monitoring/RED_metrics disabled (avoids noise)
+    #   - host_monitoring.logs disabled (container logs via filelog/containers pipeline)
+    #   - docker_stats api_version 1.44 (Amazon Linux 2023 max supported is 1.44)
+    #   - otlphttp/observe auth override with datastream token
+    #   - prometheusremotewrite/observe fixed with datastream token + /v1/prometheus endpoint
+    #   - metrics/docker + metrics/host → prometheusremotewrite/observe
+    #   - logs/containers → otlphttp/observe
     cat > vm-agents/observe-agent.yaml <<OBSERVEAGENTEOF
 token: "__OBSERVE_TOKEN__"
 observe_url: "__OBSERVE_COLLECTION_URL__"
 
-# Accept OTLP traces/metrics/logs from other containers (e.g. Prefect worker APM)
 forwarding:
   enabled: true
+  traces:
+    enabled: true
   metrics:
-    output_format: otel
+    enabled: false
+  logs:
+    enabled: false
   endpoints:
     grpc: 0.0.0.0:4317
     http: 0.0.0.0:4318
 
 application:
   RED_metrics:
-    enabled: true
+    enabled: false
 
 self_monitoring:
-  enabled: true
+  enabled: false
   fleet:
-    enabled: true
+    enabled: false
 
 host_monitoring:
   enabled: true
   logs:
-    enabled: true
-    include:
-      - /var/log/**/*.log
-      - /var/log/syslog
+    enabled: false
   metrics:
     host:
       enabled: true
@@ -461,14 +474,27 @@ resource_attributes:
   service.name: prefect.logs
   deployment.environment.name: prefect-worker
 
-# Docker container metrics + logs via OTel collector overrides
 otel_config_overrides:
+  exporters:
+    otlphttp/observe:
+      headers:
+        authorization: "Bearer __OBSERVE_DATASTREAM_TOKEN__"
+    prometheusremotewrite/observe:
+      endpoint: "__OBSERVE_COLLECTION_URL__/v1/prometheus"
+      headers:
+        authorization: "Bearer __OBSERVE_METRICS_TOKEN__"
   receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
     docker_stats:
       endpoint: unix:///var/run/docker.sock
       collection_interval: 30s
       timeout: 20s
-      api_version: "1.25"
+      api_version: "1.44"
       metrics:
         container.cpu.usage.total:
           enabled: true
@@ -498,10 +524,18 @@ otel_config_overrides:
         receivers: [docker_stats]
         processors: [memory_limiter, resourcedetection, resourcedetection/cloud, batch]
         exporters: [prometheusremotewrite/observe]
+      metrics/forward:
+        exporters: [debug]
+      metrics/host_monitoring_host:
+        exporters: [prometheusremotewrite/observe]
       logs/containers:
         receivers: [filelog/containers]
         processors: [memory_limiter, resourcedetection, resourcedetection/cloud, batch]
-        exporters: [otlphttp/observe, count]
+        exporters: [debug]
+      traces/forward:
+        receivers: [otlp]
+        processors: [memory_limiter, resourcedetection, resourcedetection/cloud, batch]
+        exporters: [otlphttp/observe]
 OBSERVEAGENTEOF
 
     # Monitoring docker-compose overlay
@@ -583,6 +617,9 @@ services:
     environment:
       WORKER_LOCATION: "${WORKER_LOCATION}"
       WORKER_POOL: "${WORKER_POOL}"
+      OBSERVE_COLLECTION_URL: "${OBSERVE_COLLECTION_URL:-}"
+      OBSERVE_DATASTREAM_TOKEN: "${OBSERVE_DATASTREAM_TOKEN:-}"
+      OBSERVE_METRICS_TOKEN: "${OBSERVE_METRICS_TOKEN:-${OBSERVE_DATASTREAM_TOKEN:-}}"
     depends_on:
       - auth-proxy-monitor
     restart: unless-stopped
@@ -634,6 +671,8 @@ USER_DATA="${USER_DATA//__SPCS_MONITOR_LOKI_ENDPOINT__/$MONITOR_LOKI}"
 USER_DATA="${USER_DATA//__AWS_REGION__/$AWS_REGION}"
 USER_DATA="${USER_DATA//__OBSERVE_TOKEN__/$OBS_TOKEN}"
 USER_DATA="${USER_DATA//__OBSERVE_COLLECTION_URL__/$OBS_URL}"
+USER_DATA="${USER_DATA//__OBSERVE_DATASTREAM_TOKEN__/$OBS_DS_TOKEN}"
+USER_DATA="${USER_DATA//__OBSERVE_METRICS_TOKEN__/$OBS_METRICS_TOKEN}"
 
 # ---------------------------------------------------------------------------
 # Step 4: Launch instance

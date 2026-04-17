@@ -204,7 +204,10 @@ spec:
         # Observe dual-write — placeholders substituted by deploy_monitoring.sh.
         # If not substituted, poller skips Observe push (empty string = disabled).
         OBSERVE_LOKI_URL: "__OBSERVE_LOKI_URL__"
-        OBSERVE_DATASTREAM_TOKEN: "__OBSERVE_DATASTREAM_TOKEN__"
+        # Uses OBSERVE_METRICS_TOKEN (routes to metrics/logs datastream 42989997).
+        # The env var name stays OBSERVE_DATASTREAM_TOKEN because that's what
+        # the poller code reads; the VALUE comes from __OBSERVE_METRICS_TOKEN__.
+        OBSERVE_DATASTREAM_TOKEN: "__OBSERVE_METRICS_TOKEN__"
 
     # ── Prometheus Backup — periodic TSDB snapshot to stage ──────────────
     # Creates TSDB snapshots every 6h and uploads to @MONITOR_STAGE/backups/prometheus/.

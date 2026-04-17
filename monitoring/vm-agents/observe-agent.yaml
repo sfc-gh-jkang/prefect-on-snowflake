@@ -11,39 +11,39 @@
 token: "__OBSERVE_TOKEN__"
 observe_url: "__OBSERVE_URL__"
 
-# Accept OTLP traces/metrics/logs from other containers (e.g. Prefect worker APM)
+# Accept OTLP traces from other containers (e.g. Prefect worker APM).
+# Metrics forwarding is disabled — we handle metrics via prometheusremotewrite/observe
+# override (with metrics datastream token) and via prometheus-agent → SPCS Prometheus.
+# Log forwarding is disabled — we handle logs via Promtail dual-write to Observe's
+# Loki-compatible endpoint.
 forwarding:
   enabled: true
   traces:
     enabled: true
   metrics:
-    enabled: true
-    output_format: otel
+    enabled: false
   logs:
-    enabled: true
+    enabled: false
   endpoints:
     grpc: 0.0.0.0:4317
     http: 0.0.0.0:4318
 
 application:
   RED_metrics:
-    enabled: true
+    enabled: false
 
 self_monitoring:
-  enabled: true
+  enabled: false
   fleet:
-    enabled: true
+    enabled: false
 
 host_monitoring:
   enabled: true
   logs:
-    enabled: true
-    include:
-      - /var/log/**/*.log
-      - /var/log/syslog
+    enabled: false   # Container logs handled by filelog/containers pipeline below
   metrics:
     host:
-      enabled: true
+      enabled: true  # CPU, memory, disk, network — the key signal for VM heartbeat
     process:
       enabled: false
 
@@ -57,6 +57,24 @@ resource_attributes:
 # the OTLP gRPC/HTTP servers only start for data_type:"logs" and silently
 # drop all incoming trace spans.  See observe-agent-spcs.yaml for details.
 otel_config_overrides:
+  exporters:
+    # Override the otlphttp/observe exporter auth header to use an Observe
+    # datastream token.  The observe-agent constructs the Authorization header
+    # from the top-level `token` field as "Bearer <customer_id>:<api_key>",
+    # but Observe's /v2/otel endpoint rejects this format with 401.
+    # The datastream token is required for auth to pass.
+    otlphttp/observe:
+      headers:
+        authorization: "Bearer __OBSERVE_DATASTREAM_TOKEN__"
+    # Override prometheusremotewrite/observe with the METRICS datastream token.
+    # observe-agent v2.0.0 auto-creates this exporter from the native token,
+    # which routes to datastream 42986179 (traces only — rejects prometheus 415).
+    # The metrics token routes to datastream 42989997 → dataset 42989998 which
+    # accepts prometheus data.
+    prometheusremotewrite/observe:
+      endpoint: "__OBSERVE_COLLECTION_URL__/v1/prometheus"
+      headers:
+        authorization: "Bearer __OBSERVE_METRICS_TOKEN__"
   receivers:
     otlp:
       protocols:
@@ -68,7 +86,7 @@ otel_config_overrides:
       endpoint: unix:///var/run/docker.sock
       collection_interval: 30s
       timeout: 20s
-      api_version: "1.25"
+      api_version: "1.44"
       metrics:
         container.cpu.usage.total:
           enabled: true
@@ -94,14 +112,29 @@ otel_config_overrides:
             layout: '%Y-%m-%dT%H:%M:%S.%LZ'
   service:
     pipelines:
+      # Docker container metrics → Observe via prometheusremotewrite/observe
+      # (using metrics datastream token that routes to dataset 42989998).
       metrics/docker:
         receivers: [docker_stats]
         processors: [memory_limiter, resourcedetection, resourcedetection/cloud, batch]
         exporters: [prometheusremotewrite/observe]
+      # Forward pipeline — observe-agent v2.0.0 creates this even when
+      # forwarding.metrics.enabled is false.  Neuter to debug (no data flows).
+      metrics/forward:
+        exporters: [debug]
+      # Host metrics → Observe via prometheusremotewrite/observe.
+      # Also reaches Observe via native observe-agent internal path (prefect-linux-host),
+      # giving redundant coverage.
+      metrics/host_monitoring_host:
+        exporters: [prometheusremotewrite/observe]
+      # Container logs → Observe via Promtail dual-write (Loki-compatible endpoint).
+      # The otlphttp/observe exporter targets datastream 42986179 which rejects
+      # OTel logs with 415 ("otellogs not supported").  Keep this pipeline on
+      # debug; Promtail handles the Observe push via its second client entry.
       logs/containers:
         receivers: [filelog/containers]
         processors: [memory_limiter, resourcedetection, resourcedetection/cloud, batch]
-        exporters: [otlphttp/observe, count]
+        exporters: [debug]
       traces/forward:
         receivers: [otlp]
         processors: [memory_limiter, resourcedetection, resourcedetection/cloud, batch]

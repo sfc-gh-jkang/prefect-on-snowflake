@@ -55,3 +55,9 @@ data "observe_dataset" "otel_metrics" {
   workspace = data.observe_workspace.default.oid
   name      = "OpenTelemetry/Metric"
 }
+
+# VM host metrics — observe-agent on worker VMs sends host metrics here
+data "observe_dataset" "linux_host" {
+  workspace = data.observe_workspace.default.oid
+  name      = "prefect-linux-host"
+}

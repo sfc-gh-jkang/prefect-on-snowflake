@@ -1651,7 +1651,8 @@ ALTER USER PREFECT_SVC SET NETWORK_POLICY = PREFECT_SVC_POLICY;
 | `GRAFANA_SMTP_USER` | deploy_monitoring.sh | Gmail sender address for alerts |
 | `GRAFANA_SMTP_PASSWORD` | deploy_monitoring.sh | Gmail App Password (no spaces) |
 | `GRAFANA_SMTP_RECIPIENTS` | deploy_monitoring.sh | Alert email recipients |
-| `OBSERVE_DATASTREAM_TOKEN` | deploy_monitoring.sh → prometheus.yml + pf_monitor.yaml | Datastream token (`ds1xxxxx:yyyyyy`) for Prometheus remote_write and log dual-write to Observe |
+| `OBSERVE_DATASTREAM_TOKEN` | deploy_monitoring.sh → observe-agent configs | Datastream token (`ds1xxxxx:yyyyyy`) for **OTLP traces** — routes to Tracing/Span datastream |
+| `OBSERVE_METRICS_TOKEN` | deploy_monitoring.sh → prometheus.yml + pf_monitor.yaml + promtail | Datastream token for **Prometheus metrics and Loki logs** — routes to metrics/logs datastream. Falls back to `OBSERVE_DATASTREAM_TOKEN` if not set |
 | `OBSERVE_COLLECTION_URL` | deploy_monitoring.sh → prometheus.yml + pf_monitor.yaml | Observe collect endpoint (`https://<customer_id>.collect.observeinc.com`) |
 | `SNOWFLAKE_ACCOUNT` | flows | Snowflake account identifier |
 | `SNOWFLAKE_USER` | flows | Snowflake username (service user for GCP) |
@@ -2697,7 +2698,7 @@ otel_config_overrides:
 
 **How it flows at deploy time:**
 
-1. `.env` contains `OBSERVE_TOKEN`, `OBSERVE_COLLECTION_URL`, and `OBSERVE_DATASTREAM_TOKEN`
+1. `.env` contains `OBSERVE_TOKEN`, `OBSERVE_COLLECTION_URL`, `OBSERVE_DATASTREAM_TOKEN`, and `OBSERVE_METRICS_TOKEN`
 2. `deploy_monitoring.sh` substitutes all three placeholders in `observe-agent-spcs.yaml` and uploads to `@MONITOR_STAGE/observe-agent/observe-agent.yaml`
 3. `pf_worker.yaml` mounts `@MONITOR_STAGE/observe-agent/` as a volume at `/etc/observe-agent`
 4. The observe-agent sidecar reads `/etc/observe-agent/observe-agent.yaml` with literal tokens/URL
@@ -2728,6 +2729,9 @@ The `secret` field in the response is the token value (format: `ds1xxxxx:yyyyyy`
   native ingest tokens. Ensure `otel_config_overrides` overrides the authorization header
   with a **datastream token** (`Bearer ds1xxxxx:yyyyyy`), and that `OBSERVE_DATASTREAM_TOKEN`
   is set in `.env`.
+- **Prometheus remote_write 415 errors (PRW blackhole)** → The traces datastream rejects
+  Prometheus format. Ensure `OBSERVE_METRICS_TOKEN` is set in `.env` with a token for a
+  datastream that accepts Prometheus data (not the Tracing/Span datastream).
 - **Traces land in wrong dataset (e.g., O4S instead of Tracing/Span)** → The datastream
   token determines routing. Ensure the token was created for the **Tracing/Span** datastream
   (has OTLP trace processing enabled), not the O4S datastream.
@@ -2762,7 +2766,7 @@ the gaps between the 9 Grafana dashboards and the 5 Observe dashboards.
 **How it works:**
 
 1. `prometheus.yml` includes a `remote_write` section with the Observe collect endpoint
-2. Uses the same datastream token as OTLP traces (`OBSERVE_DATASTREAM_TOKEN`)
+2. Uses `OBSERVE_METRICS_TOKEN` (routes to the metrics/logs datastream, which accepts Prometheus format). Falls back to `OBSERVE_DATASTREAM_TOKEN` if not set
 3. `deploy_monitoring.sh` substitutes `__OBSERVE_COLLECTION_URL__` and `__OBSERVE_DATASTREAM_TOKEN__` placeholders before uploading to `@MONITOR_STAGE`
 4. A `write_relabel_configs` filter drops noisy Go runtime and Prometheus internal metrics (`go_.*`, `promhttp_.*`, `prometheus_sd_.*`)
 
@@ -2788,11 +2792,11 @@ remote_write:
 
 | Requirement | Where | How to Verify |
 |-------------|-------|---------------|
-| `OBSERVE_DATASTREAM_TOKEN` in `.env` | `.env` file | Same token used for OTLP traces |
+| `OBSERVE_METRICS_TOKEN` in `.env` | `.env` file | Metrics/logs datastream token (different from traces token) |
 | `OBSERVE_COLLECTION_URL` in `.env` | `.env` file | `https://<customer_id>.collect.observeinc.com` |
 | `MONITOR_EGRESS_RULE` includes Observe host | Network rule | `DESCRIBE NETWORK RULE MONITOR_EGRESS_RULE` |
 
-If `OBSERVE_COLLECTION_URL` or `OBSERVE_DATASTREAM_TOKEN` are not set in `.env`,
+If `OBSERVE_COLLECTION_URL` or `OBSERVE_METRICS_TOKEN` are not set in `.env`,
 `deploy_monitoring.sh` uploads `prometheus.yml` with the raw placeholders (unsubstituted)
 and prints a warning. Prometheus will fail to connect to Observe but continues scraping
 and serving Grafana normally.
@@ -2813,9 +2817,9 @@ dashboards into Observe for unified observability.
 **How it works:**
 
 1. Observe accepts Loki push format at `https://<customer_id>.collect.observeinc.com/v1/http/loki/api/v1/push`
-2. Authentication uses the same datastream token as metrics/traces (`Authorization: Bearer <token>`)
-3. For SPCS: `deploy_monitoring.sh` substitutes `__OBSERVE_LOKI_URL__` and `__OBSERVE_DATASTREAM_TOKEN__` in `pf_monitor.yaml`
-4. For VMs: Promtail expands `${OBSERVE_COLLECTION_URL}` and `${OBSERVE_DATASTREAM_TOKEN}` from compose environment (via `-config.expand-env=true`)
+2. Authentication uses `OBSERVE_METRICS_TOKEN` — the metrics/logs datastream token (`Authorization: Bearer <token>`)
+3. For SPCS: `deploy_monitoring.sh` substitutes `__OBSERVE_LOKI_URL__` and `__OBSERVE_METRICS_TOKEN__` in `pf_monitor.yaml`
+4. For VMs: Promtail expands `${OBSERVE_COLLECTION_URL}` and `${OBSERVE_METRICS_TOKEN}` from compose environment (via `-config.expand-env=true`)
 
 **Graceful degradation:** If Observe env vars are empty or unset, both the poller and
 promtail silently skip the Observe push — local Loki ingestion is unaffected.
@@ -2845,6 +2849,23 @@ into datasets.
 >
 > The O4S native app needs the **app ingest token**. Terraform needs the **API token**.
 > Using the wrong token type is the #1 cause of "data sent but no datasets appear".
+
+> **Two datastream tokens — traces vs metrics/logs:**
+>
+> This project uses **two separate datastream tokens** that route to different Observe datastreams:
+>
+> | `.env` Variable | Datastream | Accepts | Used By |
+> |-----------------|------------|---------|---------|
+> | `OBSERVE_DATASTREAM_TOKEN` | Tracing/Span (OTLP traces) | OTLP traces only | observe-agent `otlphttp/observe` exporter |
+> | `OBSERVE_METRICS_TOKEN` | prefect-spcs-observe-agent (metrics/logs) | Prometheus remote_write, Loki push | Prometheus `remote_write`, observe-agent `prometheusremotewrite/observe`, promtail Loki dual-write, event-log-poller |
+>
+> **Why two tokens?** Each Observe datastream only accepts specific data formats. The traces
+> datastream rejects Prometheus data (HTTP 415), and the metrics datastream doesn't process
+> OTLP traces. Using the wrong token is the #1 cause of the "PRW blackhole" — data is sent
+> but silently dropped.
+>
+> If `OBSERVE_METRICS_TOKEN` is not set, scripts fall back to `OBSERVE_DATASTREAM_TOKEN`.
+> This works only if your datastream accepts both formats (uncommon).
 
 ### Setup: Snowflake Side
 

@@ -22,5 +22,6 @@ output "monitor_names" {
     long_running_queries = observe_monitor_v2.long_running_queries.name
     worker_heartbeat    = observe_monitor_v2.worker_heartbeat.name
     warehouse_idle_cost = observe_monitor_v2.warehouse_idle_cost.name
+    vm_heartbeat        = observe_monitor_v2.vm_heartbeat.name
   }
 }

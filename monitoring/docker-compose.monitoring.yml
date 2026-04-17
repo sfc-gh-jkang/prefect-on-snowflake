@@ -102,6 +102,9 @@ services:
       WORKER_POOL: "${WORKER_POOL:-unknown}"
       OBSERVE_COLLECTION_URL: "${OBSERVE_COLLECTION_URL:-}"
       OBSERVE_DATASTREAM_TOKEN: "${OBSERVE_DATASTREAM_TOKEN:-}"
+      # Metrics/logs token for Loki dual-write to Observe. Falls back to
+      # OBSERVE_DATASTREAM_TOKEN for backward compatibility.
+      OBSERVE_METRICS_TOKEN: "${OBSERVE_METRICS_TOKEN:-${OBSERVE_DATASTREAM_TOKEN:-}}"
     depends_on:
       - auth-proxy-monitor
     restart: unless-stopped

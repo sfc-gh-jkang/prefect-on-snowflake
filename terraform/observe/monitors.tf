@@ -154,3 +154,34 @@ resource "observe_monitor_v2" "warehouse_idle_cost" {
     }
   }
 }
+
+# ---------------------------------------------------------------------------
+# 5. VM Monitoring Heartbeat Missing — no host metrics from a worker VM
+# ---------------------------------------------------------------------------
+resource "observe_monitor_v2" "vm_heartbeat" {
+  name        = "VM Worker Monitoring Down"
+  description = "Alert when no host metrics are received from a worker VM's observe-agent for 10 minutes. This detects docker compose down or VM crash scenarios."
+  workspace   = data.observe_workspace.default.oid
+  rule_kind   = "count"
+
+  lookback_time = "10m0s"
+
+  inputs = {
+    "host_data_from_prefect-linux-host" = data.observe_dataset.linux_host.oid
+  }
+
+  stage {
+    output_stage = false
+    pipeline     = ""
+  }
+
+  rules {
+    level = "error"
+    count {
+      compare_values {
+        compare_fn = "less"
+        value_int64 = [1]
+      }
+    }
+  }
+}

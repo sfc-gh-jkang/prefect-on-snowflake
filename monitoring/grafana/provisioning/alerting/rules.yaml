@@ -204,8 +204,8 @@ groups:
                     type: lt
                     params: [1]
               refId: C
-        noDataState: OK
-        execErrState: OK
+        noDataState: Alerting
+        execErrState: Alerting
         for: 5m
         labels:
           severity: critical
@@ -213,4 +213,57 @@ groups:
         annotations:
           summary: "{{ $labels.pool_name }} has no online workers"
           description: "Work pool {{ $labels.pool_name }} has {{ if $values.B }}{{ printf \"%.0f\" $values.B.Value }}{{ else }}0{{ end }} online workers (need >= 1). No heartbeat received for 5+ minutes. The worker container or VM may be down. Flows targeting this pool will queue until a worker reconnects. Check: docker compose ps on the worker host, or SHOW SERVICES for SPCS pools."
+
+      # -- VM monitoring heartbeat stale --------------------------------
+      # The VM prometheus-agent remote_writes node-exporter metrics to
+      # the central SPCS Prometheus.  If node_time_seconds goes
+      # missing for a given worker_location, the monitoring stack on
+      # that VM is down (typically from docker compose down killing
+      # everything).  noDataState=Alerting so a complete disappearance
+      # still fires.  We use node_time_seconds (not `up`) because `up`
+      # is synthetic and NOT forwarded via remote_write.
+      #
+      # The threshold fires when count of node_time_seconds series
+      # drops below the expected number of monitored VMs (currently 3:
+      # GCP, AWS primary, AWS backup).  A drop means a VM's monitoring
+      # stack stopped remote_writing.
+      - uid: vm-heartbeat-stale
+        title: VM Worker Monitoring Down
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            model:
+              expr: count(node_time_seconds)
+              instant: true
+              refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [3]
+              refId: C
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 3m
+        labels:
+          severity: critical
+          source: grafana
+        annotations:
+          summary: "Only {{ if $values.B }}{{ printf \"%.0f\" $values.B.Value }}{{ else }}0{{ end }}/3 worker VMs reporting metrics"
+          description: "Expected 3 VMs reporting node_time_seconds (GCP, AWS primary, AWS backup) but only {{ if $values.B }}{{ printf \"%.0f\" $values.B.Value }}{{ else }}0{{ end }} are active. A VM's monitoring stack is likely down — docker compose may have been stopped without being restarted. Check: docker ps on each worker VM."
 

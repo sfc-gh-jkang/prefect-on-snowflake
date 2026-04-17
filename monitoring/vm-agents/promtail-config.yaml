@@ -19,8 +19,10 @@ clients:
   # Dual-write to Observe (Loki-compatible endpoint).
   # Uses env var expansion (-config.expand-env=true in compose).
   # If OBSERVE_COLLECTION_URL is empty, promtail skips this client (invalid URL = no-op).
+  # OBSERVE_METRICS_TOKEN routes to the metrics/logs datastream (42989997) which accepts Loki.
+  # docker-compose.monitoring.yml sets OBSERVE_METRICS_TOKEN (falls back to OBSERVE_DATASTREAM_TOKEN).
   - url: "${OBSERVE_COLLECTION_URL}/v1/http/loki/api/v1/push"
-    bearer_token: "${OBSERVE_DATASTREAM_TOKEN}"
+    bearer_token: "${OBSERVE_METRICS_TOKEN}"
     external_labels:
       worker_location: "${WORKER_LOCATION}"
       worker_pool: "${WORKER_POOL}"
