@@ -2625,8 +2625,8 @@ this entirely. Both the parent worker (`otel_entrypoint.py`) and child flow-run 
 
 | File | Purpose |
 |------|---------|
-| `images/prefect/otel_entrypoint.py` | Parent worker OTel setup: `SimpleSpanProcessor`, sets `PYTHONPATH` for children |
-| `images/prefect/otel_sitecustomize.py` | Child process OTel setup: `SimpleSpanProcessor`, disables metrics/logs export |
+| `images/prefect/otel_entrypoint.py` | Parent worker OTel setup: `SimpleSpanProcessor`, RuntimeWarning suppression, sets `PYTHONPATH` for children |
+| `images/prefect/otel_sitecustomize.py` | Child process OTel setup: `SimpleSpanProcessor`, RuntimeWarning suppression, disables metrics/logs export |
 | `images/prefect/Dockerfile` | Copies both files, installs sitecustomize in `/opt/prefect/otel_sitecustomize/` |
 | `specs/pf_worker.yaml` | Worker spec with OTel env vars + observe-agent sidecar |
 | `monitoring/spcs-agents/observe-agent-spcs.yaml` | Observe-agent config with datastream token override |
@@ -2644,6 +2644,7 @@ OTEL_LOGS_EXPORTER: "none"
 OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: "system_metrics"
 OTEL_RESOURCE_ATTRIBUTES: "deployment.environment.name=spcs,service.namespace=prefect"
 OTEL_TRACES_SAMPLER: "parentbased_always_on"
+OTEL_PYTHON_EXCLUDED_URLS: "csrf-token"
 # Custom env var — otel_entrypoint.py copies to PYTHONPATH after its own setup
 OTEL_PYTHONPATH: "/opt/prefect/otel_sitecustomize"
 ```
@@ -2651,6 +2652,8 @@ OTEL_PYTHONPATH: "/opt/prefect/otel_sitecustomize"
 > **Note:** Use `http/protobuf` protocol on port 4318, not `grpc` on 4317. The worker
 > command is `python otel_entrypoint.py <prefect command>` — NOT `opentelemetry-instrument`.
 > The custom entrypoint configures `SimpleSpanProcessor` and then execs the wrapped command.
+> `OTEL_PYTHON_EXCLUDED_URLS` filters out spans for URL patterns that produce false-positive
+> errors (e.g., the CSRF token endpoint returns 422 by design on first request).
 
 **observe-agent sidecar config (`observe-agent-spcs.yaml`):**
 
@@ -2734,6 +2737,20 @@ The `secret` field in the response is the token value (format: `ds1xxxxx:yyyyyy`
 - **Config not picked up after update** → Stage-mounted volumes are read at container
   start. `ALTER SERVICE` with same spec digest doesn't restart containers. Use
   `ALTER SERVICE ... SUSPEND` then `RESUME` to force a fresh mount.
+- **422 error spans from CSRF token requests** → Prefect's UI fetches `/csrf-token`
+  before mutations. The server returns 422 when no prior token exists — this is normal
+  behavior, not a real error. `OTEL_PYTHON_EXCLUDED_URLS: "csrf-token"` filters these
+  spans so they don't appear as false-positive errors in APM dashboards.
+- **RuntimeWarning "coroutine was never awaited"** → Asyncio GC warnings from Prefect's
+  internal coroutines. Harmless but noisy. Both `otel_entrypoint.py` (parent worker) and
+  `otel_sitecustomize.py` (child flow-run processes) suppress these via
+  `warnings.filterwarnings("ignore", category=RuntimeWarning, message="coroutine.*was never awaited")`.
+  If warnings reappear after an upgrade, verify the filter is still present in **both** files.
+- **Server/worker version skew** → The server image tag in `build_and_push.sh`
+  (`PREFECT_SERVER_TAG`) must match the Prefect version installed in the worker's
+  `Dockerfile` (pulled via `uv sync`). Floating tags like `3-python3.12` can silently
+  lag behind — always pin to a specific version (e.g., `3.6.26-python3.12`). Check with
+  `curl -s https://<server-endpoint>/api/health | jq .version`.
 
 ### Prometheus Metrics → Observe (remote_write)
 

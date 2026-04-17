@@ -1,7 +1,7 @@
 spec:
   containers:
     - name: pf-migrate
-      image: /prefect_db/prefect_schema/prefect_repository/prefect:3.6.26-python3.12-1776424319
+      image: /prefect_db/prefect_schema/prefect_repository/prefect:3.6.26-python3.12
       command:
         - prefect
         - server

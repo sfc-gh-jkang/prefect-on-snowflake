@@ -4,7 +4,7 @@ spec:
       # Using :latest for dev convenience. For production rollback support,
       # pin to a git-SHA tag (e.g., prefect-worker:c8a115d) and update via
       # ALTER SERVICE ... FROM @PREFECT_SPECS SPECIFICATION_FILE = 'pf_worker.yaml';
-      image: /prefect_db/prefect_schema/prefect_repository/prefect-worker:otel-final-1776424319
+      image: /prefect_db/prefect_schema/prefect_repository/prefect-worker:latest
       command:
         - /opt/prefect/.venv/bin/python
         - /opt/prefect/otel_entrypoint.py
