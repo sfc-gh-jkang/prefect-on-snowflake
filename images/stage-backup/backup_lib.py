@@ -229,7 +229,7 @@ def extract_tarball(tarball_path: str, target_dir: str) -> None:
         target_dir: Directory to extract into
     """
     with tarfile.open(tarball_path, "r:gz") as tar:
-        tar.extractall(path=target_dir)
+        tar.extractall(path=target_dir, filter="data")
     logger.info("Extracted %s to %s", tarball_path, target_dir)
 
 
