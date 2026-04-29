@@ -1,0 +1,23 @@
+# /etc/systemd/system/prefect-gcp-worker-watch.service
+#
+# Reconciliation watchdog: every 2 minutes (driven by the paired .timer unit),
+# re-run `docker compose up -d` to restore any container that was manually
+# stopped, crashed past its restart budget, or removed.
+#
+# Idempotent: when containers are already healthy, docker compose exits ~instantly
+# with no side effects.
+#
+# This closes the gap that the Apr 17 2026 incident exposed: `restart: unless-stopped`
+# does not auto-restart a container that was explicitly stopped via
+# `docker compose stop`/`down`. The watchdog overrides that and brings the worker
+# back within ~2 minutes regardless of how it went down.
+
+[Unit]
+Description=Reconcile Prefect GCP worker stack if containers are missing
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/prefect-gcp
+ExecStart=/usr/bin/docker compose -f docker-compose.gcp.yaml up -d --wait
+ExecStart=/usr/bin/docker compose -f docker-compose.gcp-backup.yaml up -d --wait

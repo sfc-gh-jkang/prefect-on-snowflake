@@ -242,6 +242,33 @@ healthy, but connection refused or timeout (hung process) as unhealthy. After
 3 consecutive failures Docker restarts the container automatically via
 `restart: unless-stopped`.
 
+## Auto-Recovery (systemd)
+
+`restart: unless-stopped` has one gap: it does **not** restart containers that
+were manually stopped via `docker compose stop`/`down` — Docker treats the stop
+as intentional and they stay down forever. The same issue took out `gcp-pool`
+on Apr 17 2026 for 12 days.
+
+Three systemd units guard against this on every AWS worker instance:
+
+| Unit | Role |
+|---|---|
+| `prefect-aws-worker.service` | Boot-time `docker compose up -d --wait` on every `docker-compose.aws*.yaml` in `/opt/prefect-aws`. |
+| `prefect-aws-worker-watch.service` | Same, invoked by the timer every 2 min. |
+| `prefect-aws-worker-watch.timer` | Fires every 2 min; idempotent no-op when healthy. |
+
+Installed automatically by `setup_aws_worker.sh` user-data during instance
+bootstrap. Source unit files are in this directory for re-installation on
+existing instances via SSM. Protection covers: manual `docker compose down`,
+accidental `docker rm`, VM reboot, docker daemon restart.
+
+Verify on a live instance (via SSM):
+```bash
+aws ssm send-command --instance-ids <id> --document-name AWS-RunShellScript \
+  --parameters 'commands=["systemctl status prefect-aws-worker.service","systemctl list-timers prefect-aws-worker-watch.timer"]' \
+  --region us-west-2 --profile 484577546576_Contributor
+```
+
 ## Troubleshooting
 
 | Problem | Solution |

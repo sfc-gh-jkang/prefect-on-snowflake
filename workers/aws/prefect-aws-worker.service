@@ -1,0 +1,36 @@
+# /etc/systemd/system/prefect-aws-worker.service
+#
+# Boot-time reconciliation: bring up the Prefect AWS worker compose stacks
+# (primary + backup) after the docker daemon is ready. Complements docker's
+# `restart: unless-stopped` by covering the one failure mode restart policies
+# cannot: a manual `docker compose stop`/`down` that Docker treats as intentional
+# and never auto-restarts.
+#
+# Pair with prefect-aws-worker-watch.timer for continuous reconciliation.
+#
+# Install (done automatically by setup_aws_worker.sh user-data):
+#   sudo cp prefect-aws-worker.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now prefect-aws-worker.service
+
+[Unit]
+Description=Prefect AWS worker stack (primary or backup)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/prefect-aws
+# /opt/prefect-aws contains whichever compose file the instance uses
+# (primary: docker-compose.aws.yaml, backup: docker-compose.aws-backup.yaml).
+# setup_aws_worker.sh writes the appropriate compose file per instance role.
+# This unit invokes compose against every *.yaml file in the directory that
+# starts with docker-compose.aws, ensuring whatever is present comes up.
+ExecStart=/bin/bash -c 'for f in /opt/prefect-aws/docker-compose.aws*.yaml; do [ -f "$f" ] || continue; /usr/bin/docker compose -f "$f" up -d --wait; done'
+ExecStop=/bin/true
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

@@ -197,6 +197,10 @@ else
     run_sql "$SQL_DIR/07_create_services.sql"    "7/8"
     run_sql "$SQL_DIR/08_validate.sql"           "8/8"
 
+    # Watchdog: auto-resume PF_WORKER if suspended (mirrors VM systemd watchdog).
+    # Run after services are created. Idempotent — CREATE OR REPLACE + ALTER TASK RESUME.
+    run_sql "$SQL_DIR/11_setup_watchdog.sql"     "extra"
+
     echo "=== Deployment complete ==="
 fi
 

@@ -1,0 +1,36 @@
+# /etc/systemd/system/prefect-gcp-worker.service
+#
+# Boot-time reconciliation: bring up the Prefect GCP worker compose stacks
+# (primary + backup) after the docker daemon is ready. Complements docker's
+# `restart: unless-stopped` by covering the one failure mode restart policies
+# cannot: a manual `docker compose stop`/`down` that Docker treats as intentional
+# and never auto-restarts.
+#
+# Pair with prefect-gcp-worker-watch.timer for continuous reconciliation.
+#
+# Install:
+#   sudo cp prefect-gcp-worker.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now prefect-gcp-worker.service
+
+[Unit]
+Description=Prefect GCP worker stack (primary + backup)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/prefect-gcp
+# Both compose files share project name "prefect-gcp" — bring up primary first,
+# then backup. Each is idempotent when containers are already healthy.
+ExecStart=/usr/bin/docker compose -f docker-compose.gcp.yaml up -d --wait
+ExecStart=/usr/bin/docker compose -f docker-compose.gcp-backup.yaml up -d --wait
+# On systemctl stop, do NOT tear down containers — we only use stop for
+# unit cleanup, never to signal worker shutdown.
+ExecStop=/bin/true
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

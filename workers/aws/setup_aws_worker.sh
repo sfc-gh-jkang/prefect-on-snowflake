@@ -650,6 +650,67 @@ MONCOMPOSEEOF
 echo "Starting worker + monitoring sidecars..."
 docker compose -f docker-compose.aws.yaml -f docker-compose.monitoring.yml up -d --build
 
+# ---------------------------------------------------------------------------
+# Install systemd units for auto-recovery
+# ---------------------------------------------------------------------------
+# `restart: unless-stopped` does NOT restart containers that were explicitly
+# stopped via `docker compose stop`/`down`. A systemd oneshot unit + 2-min
+# watchdog timer overrides that behavior and covers:
+#   - manual `docker compose stop`/`down`
+#   - accidental `docker rm`
+#   - VM reboot (boot-time unit)
+#   - docker daemon restart
+# See: Apr 17 2026 gcp-pool incident.
+echo "Installing systemd auto-recovery units..."
+cat >/etc/systemd/system/prefect-aws-worker.service <<'UNITEOF'
+[Unit]
+Description=Prefect AWS worker stack
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/prefect-aws
+ExecStart=/bin/bash -c 'for f in /opt/prefect-aws/docker-compose.aws*.yaml; do [ -f "$f" ] || continue; /usr/bin/docker compose -f "$f" up -d --wait; done'
+ExecStop=/bin/true
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
+
+cat >/etc/systemd/system/prefect-aws-worker-watch.service <<'UNITEOF'
+[Unit]
+Description=Reconcile Prefect AWS worker stack if containers missing
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/prefect-aws
+ExecStart=/bin/bash -c 'for f in /opt/prefect-aws/docker-compose.aws*.yaml; do [ -f "$f" ] || continue; /usr/bin/docker compose -f "$f" up -d --wait; done'
+UNITEOF
+
+cat >/etc/systemd/system/prefect-aws-worker-watch.timer <<'UNITEOF'
+[Unit]
+Description=Run prefect-aws-worker-watch every 2 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=30s
+Unit=prefect-aws-worker-watch.service
+
+[Install]
+WantedBy=timers.target
+UNITEOF
+
+systemctl daemon-reload
+systemctl enable --now prefect-aws-worker.service
+systemctl enable --now prefect-aws-worker-watch.timer
+echo "  systemd units installed and enabled."
+
 echo "=== Prefect worker bootstrap complete ==="
 OUTEREOF
 )

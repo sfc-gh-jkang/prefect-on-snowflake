@@ -132,6 +132,33 @@ gcloud compute ssh "$VM_NAME" \
         set -a && source .env && set +a && \
         docker compose -f docker-compose.gcp.yaml -f docker-compose.monitoring.yml up -d"
 
+# ----------------------------------------------------------------------------
+# Install systemd units for auto-recovery
+# ----------------------------------------------------------------------------
+# docker compose's `restart: unless-stopped` policy does NOT restart containers
+# that were stopped manually via `docker compose stop`/`down` — Docker treats
+# the stop as intentional. A 2-min systemd watchdog timer overrides that
+# behavior and ensures both worker stacks always come back up.
+#
+# Also covers: VM reboot, docker daemon restart, accidental `docker rm`.
+echo "Installing systemd auto-recovery units..."
+gcloud compute scp \
+    "$SCRIPT_DIR/prefect-gcp-worker.service" \
+    "$SCRIPT_DIR/prefect-gcp-worker-watch.service" \
+    "$SCRIPT_DIR/prefect-gcp-worker-watch.timer" \
+    "$VM_NAME:/tmp/" \
+    --project="$PROJECT" \
+    --zone="$ZONE"
+
+gcloud compute ssh "$VM_NAME" \
+    --project="$PROJECT" \
+    --zone="$ZONE" \
+    --command="sudo mv /tmp/prefect-gcp-worker.service /tmp/prefect-gcp-worker-watch.service /tmp/prefect-gcp-worker-watch.timer /etc/systemd/system/ && \
+        sudo systemctl daemon-reload && \
+        sudo systemctl enable --now prefect-gcp-worker.service && \
+        sudo systemctl enable --now prefect-gcp-worker-watch.timer && \
+        echo 'systemd units installed and enabled.'"
+
 echo ""
 echo "=== GCP worker VM created ==="
 echo "The worker will appear in the Prefect UI under work pool 'gcp-pool'."

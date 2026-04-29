@@ -84,6 +84,28 @@ healthy, but connection refused or timeout (hung process) as unhealthy. After
 3 consecutive failures Docker restarts the container automatically via
 `restart: unless-stopped`.
 
+## Auto-Recovery (systemd)
+
+`restart: unless-stopped` has one gap: it does **not** restart containers that
+were manually stopped via `docker compose stop`/`down` — Docker treats the stop
+as intentional and they stay down forever. This bit us on Apr 17 2026 when both
+`gcp-pool` worker stacks went dark for 12 days.
+
+Three systemd units now guard against this:
+
+| Unit | Role |
+|---|---|
+| `prefect-gcp-worker.service` | Boot-time `docker compose up -d --wait` on both stacks. |
+| `prefect-gcp-worker-watch.service` | Same, but invoked by the timer every 2 min. |
+| `prefect-gcp-worker-watch.timer` | Fires every 2 min; idempotent no-op when healthy. |
+
+Installed by `setup_gcp_worker.sh`. Source files live alongside the compose
+files in this directory. Protection covers: manual `docker compose down`,
+accidental `docker rm`, VM reboot, docker daemon restart.
+
+Verify: `sudo systemctl status prefect-gcp-worker.service` and
+`sudo systemctl list-timers prefect-gcp-worker-watch.timer`.
+
 ## Ports
 
 | Service | Host Port | Container Port |

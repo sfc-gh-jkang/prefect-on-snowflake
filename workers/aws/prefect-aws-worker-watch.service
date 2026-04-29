@@ -1,0 +1,19 @@
+# /etc/systemd/system/prefect-aws-worker-watch.service
+#
+# Reconciliation watchdog: every 2 minutes (driven by the paired .timer unit),
+# re-run `docker compose up -d` to restore any container that was manually
+# stopped, crashed past its restart budget, or removed.
+#
+# Closes the gap that `restart: unless-stopped` cannot cover: containers that
+# were explicitly stopped via `docker compose stop`/`down` stay down forever
+# under that policy. This watchdog overrides that and brings them back within
+# ~2 minutes regardless of how they went down.
+
+[Unit]
+Description=Reconcile Prefect AWS worker stack if containers are missing
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/prefect-aws
+ExecStart=/bin/bash -c 'for f in /opt/prefect-aws/docker-compose.aws*.yaml; do [ -f "$f" ] || continue; /usr/bin/docker compose -f "$f" up -d --wait; done'

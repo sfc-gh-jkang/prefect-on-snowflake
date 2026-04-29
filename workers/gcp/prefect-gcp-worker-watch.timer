@@ -1,0 +1,16 @@
+# /etc/systemd/system/prefect-gcp-worker-watch.timer
+#
+# Fires every 2 minutes to run prefect-gcp-worker-watch.service, which re-runs
+# `docker compose up -d` to restore any stopped/removed worker containers.
+
+[Unit]
+Description=Run prefect-gcp-worker-watch every 2 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=30s
+Unit=prefect-gcp-worker-watch.service
+
+[Install]
+WantedBy=timers.target
