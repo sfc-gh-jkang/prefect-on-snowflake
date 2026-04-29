@@ -4872,10 +4872,10 @@ class TestAlertRuleCrossSourceUniqueness:
                 )
 
     def test_total_alert_count_across_all_sources(self):
-        """We should have 7 Prometheus + 4 Loki + 5 Grafana = 16 total alerts."""
+        """We should have 7 Prometheus + 4 Loki + 6 Grafana = 17 total alerts."""
         assert len(self.prom_names) == 7
         assert len(self.loki_names) == 4
-        assert len(self.grafana_uids) == 5
+        assert len(self.grafana_uids) == 6
 
 
 # ===========================================================================

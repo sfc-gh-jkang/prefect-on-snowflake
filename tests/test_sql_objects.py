@@ -22,6 +22,7 @@ EXPECTED_SQL_FILES = [
     "08b_setup_o4s.sql",
     "09_suspend_all.sql",
     "10_resume_all.sql",
+    "11_setup_watchdog.sql",
 ]
 
 # Long-running SPCS services (excludes one-shot jobs like PF_MIGRATE, PF_DEPLOY_JOB)
