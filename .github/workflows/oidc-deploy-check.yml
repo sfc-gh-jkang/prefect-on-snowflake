@@ -1,0 +1,36 @@
+# Throwaway: validates the deploy job's OIDC snow-step path (stage read+write)
+# without the 22-min build dependency. workflow_dispatch on main -> OIDC subject
+# repo:sfc-gh-jkang/prefect-on-snowflake:ref:refs/heads/main (matches the WIF user).
+# Delete this file after validating.
+name: OIDC Deploy-Path Check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  stage-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: snowflakedb/snowflake-actions@v3
+        with:
+          use-oidc: true
+          cli-version: "3.16"
+          default-config-file-path: ".github/ci-config.toml"
+          oidc-token-name: "SNOWFLAKE_CONNECTIONS_CI_TOKEN"
+      - name: Validate stage read + write via OIDC (non-destructive)
+        run: |
+          snow connection test -c ci
+          echo "READ:"
+          snow stage list-files @PREFECT_DB.PREFECT_SCHEMA.PREFECT_SPECS -c ci || true
+          echo "oidc-validate $(date -u +%FT%TZ)" > _oidc_check.txt
+          echo "WRITE:"
+          snow stage copy _oidc_check.txt @PREFECT_DB.PREFECT_SCHEMA.PREFECT_SPECS/_oidc_check/ --overwrite -c ci
+          echo "CLEANUP:"
+          snow stage remove @PREFECT_DB.PREFECT_SCHEMA.PREFECT_SPECS/_oidc_check/_oidc_check.txt -c ci
+          echo "OIDC deploy-path: READ + WRITE + REMOVE all succeeded"
