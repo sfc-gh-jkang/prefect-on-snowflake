@@ -51,6 +51,9 @@ deployments:
     entrypoint: stage_cleanup_flow.py:stage_cleanup
     work_pool:
       name: spcs-pool
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
     tags: [spcs, maintenance, storage]
     parameters:
       retention_days: 30
@@ -64,6 +67,9 @@ deployments:
     entrypoint: stage_cleanup_flow.py:stage_cleanup
     work_pool:
       name: gcp-pool
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
     tags: [gcp, maintenance, storage]
     parameters:
       retention_days: 30
@@ -77,6 +83,9 @@ deployments:
     entrypoint: stage_cleanup_flow.py:stage_cleanup
     work_pool:
       name: aws-pool
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
     tags: [aws, maintenance, storage]
     parameters:
       retention_days: 30
@@ -90,6 +99,9 @@ deployments:
     entrypoint: stage_cleanup_flow.py:stage_cleanup
     work_pool:
       name: azure-pool
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
     tags: [azure, maintenance, storage]
     parameters:
       retention_days: 30
@@ -103,6 +115,9 @@ deployments:
     entrypoint: stage_cleanup_flow.py:stage_cleanup
     work_pool:
       name: aws-pool-backup
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
     tags: [aws-backup, maintenance, storage]
     parameters:
       retention_days: 30
@@ -116,6 +131,9 @@ deployments:
     entrypoint: stage_cleanup_flow.py:stage_cleanup
     work_pool:
       name: azure-pool-backup
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
     tags: [azure-backup, maintenance, storage]
     parameters:
       retention_days: 30
@@ -129,6 +147,9 @@ deployments:
     entrypoint: stage_cleanup_flow.py:stage_cleanup
     work_pool:
       name: gcp-pool-backup
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
     tags: [gcp-backup, maintenance, storage]
     parameters:
       retention_days: 30
@@ -145,6 +166,9 @@ deployments:
     entrypoint: data_quality_flow.py:data_quality_check
     work_pool:
       name: spcs-pool
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
     tags: [spcs, data-quality, monitoring]
     schedules:
       - cron: "0 7 * * *"
@@ -156,6 +180,9 @@ deployments:
     entrypoint: data_quality_flow.py:data_quality_check
     work_pool:
       name: gcp-pool
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
     tags: [gcp, data-quality, monitoring]
     schedules:
       - cron: "0 7 * * *"
@@ -167,6 +194,9 @@ deployments:
     entrypoint: data_quality_flow.py:data_quality_check
     work_pool:
       name: aws-pool
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
     tags: [aws, data-quality, monitoring]
     schedules:
       - cron: "0 7 * * *"
@@ -178,6 +208,9 @@ deployments:
     entrypoint: data_quality_flow.py:data_quality_check
     work_pool:
       name: azure-pool
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
     tags: [azure, data-quality, monitoring]
     schedules:
       - cron: "0 7 * * *"
@@ -189,6 +222,9 @@ deployments:
     entrypoint: data_quality_flow.py:data_quality_check
     work_pool:
       name: aws-pool-backup
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
     tags: [aws-backup, data-quality, monitoring]
     schedules:
       - cron: "0 7 * * *"
@@ -200,6 +236,9 @@ deployments:
     entrypoint: data_quality_flow.py:data_quality_check
     work_pool:
       name: azure-pool-backup
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
     tags: [azure-backup, data-quality, monitoring]
     schedules:
       - cron: "0 7 * * *"
@@ -211,6 +250,9 @@ deployments:
     entrypoint: data_quality_flow.py:data_quality_check
     work_pool:
       name: gcp-pool-backup
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
     tags: [gcp-backup, data-quality, monitoring]
     schedules:
       - cron: "0 7 * * *"
