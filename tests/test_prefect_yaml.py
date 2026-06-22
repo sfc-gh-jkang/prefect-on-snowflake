@@ -348,10 +348,21 @@ class TestConcurrency:
             assert cl.get("limit") == 1
             assert cl.get("collision_strategy") == "CANCEL_NEW"
 
-    def test_stage_cleanup_no_concurrency_limit(self, deployment_map):
+    def test_stage_cleanup_has_concurrency_limit(self, deployment_map):
+        # Added 2026-06-22 (fleet-wide concurrency hardening): stage-cleanup is
+        # idempotent + runtime-dated, so overlapping/catch-up runs collapse to one.
         for suffix in ACTIVE_POOL_SUFFIXES.values():
             d = deployment_map[f"stage-cleanup-{suffix}"]
-            assert "concurrency_limit" not in d
+            cl = d.get("concurrency_limit", {})
+            assert cl.get("limit") == 1
+            assert cl.get("collision_strategy") == "CANCEL_NEW"
+
+    def test_data_quality_has_concurrency_limit(self, deployment_map):
+        for suffix in ACTIVE_POOL_SUFFIXES.values():
+            d = deployment_map[f"data-quality-{suffix}"]
+            cl = d.get("concurrency_limit", {})
+            assert cl.get("limit") == 1
+            assert cl.get("collision_strategy") == "CANCEL_NEW"
 
 
 # ===========================================================================
