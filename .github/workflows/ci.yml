@@ -9,19 +9,36 @@
 #   deploy  — sync flows + specs + register deployments (main, manual)
 #   e2e     — end-to-end tests against live SPCS (scheduled/manual)
 #
+# Authentication (2026-06-22): the `build` job authenticates to Snowflake via
+# GitHub OIDC / Workload Identity Federation (snowflakedb/snowflake-actions),
+# NOT a stored PAT. Setup on the demo account:
+#   - SERVICE user GH_PREFECT_SPCS_CI with WORKLOAD_IDENTITY (OIDC, subject
+#     repo:sfc-gh-jkang/prefect-on-snowflake:ref:refs/heads/main)
+#   - role PREFECT_CI_RL (USAGE on PREFECT_DB/SCHEMA + READ/WRITE on the image repo)
+#   - user-level NETWORK POLICY GH_PREFECT_SPCS_CI_POLICY (allows the Snowflake-
+#     managed SaaS rule SNOWFLAKE.NETWORK_SECURITY.GITHUBACTIONS_GLOBAL),
+#     overriding the account VPN policy for this token-only user.
+#   - connection config: .github/ci-config.toml ([connections.ci], no secret)
+#
 # Required GitHub Secrets (Settings > Secrets and variables > Actions):
 #   DOCKERHUB_USER       — Docker Hub username (avoids pull rate limits)
 #   DOCKERHUB_TOKEN      — Docker Hub access token
-#   SNOWFLAKE_ACCOUNT    — e.g. "YOUR_ORG-YOUR_ACCOUNT"
-#   SNOWFLAKE_USER       — e.g. "YOUR_USER"
-#   SNOWFLAKE_PAT        — Snowflake Programmatic Access Token
 #   PREFECT_API_URL      — e.g. "https://<endpoint>/api"
 #   GIT_REPO_URL         — this repo's HTTPS clone URL
 #   GIT_ACCESS_TOKEN     — GitHub personal access token (repo scope)
 #   PREFECT_ENV          — (optional) "dev", "staging", "prod"
+#   SNOWFLAKE_PAT        — (deploy/diff/e2e ONLY) Snowflake token for the
+#                          self-hosted Prefect server's auth-proxy header
+#                          (PREFECT_CLIENT_CUSTOM_HEADERS). OIDC cannot supply a
+#                          static bearer for that ingress; see deploy job note.
 # =============================================================================
 
 name: CI/CD
+
+# GitHub OIDC token minting for Workload Identity Federation (build job).
+permissions:
+  id-token: write
+  contents: read
 
 on:
   push:
@@ -171,45 +188,32 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Install Snow CLI
-        if: env.SNOWFLAKE_PAT != ''
-        env:
-          SNOWFLAKE_PAT: ${{ secrets.SNOWFLAKE_PAT }}
-        run: pip install "snowflake-cli-labs>=3.0,<4" --quiet
-
-      - name: Configure Snowflake connection
-        if: env.SNOWFLAKE_PAT != ''
-        env:
-          SNOWFLAKE_PAT: ${{ secrets.SNOWFLAKE_PAT }}
-        run: |
-          mkdir -p ~/.snowflake
-          cat > ~/.snowflake/connections.toml << 'TOML'
-          [ci]
-          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
-          user = "${{ secrets.SNOWFLAKE_USER }}"
-          authenticator = "programmatic_access_token"
-          token = "${{ secrets.SNOWFLAKE_PAT }}"
-          role = "PREFECT_ROLE"
-          database = "PREFECT_DB"
-          schema = "PREFECT_SCHEMA"
-          warehouse = "PREFECT_WH"
-          TOML
-          chmod 0600 ~/.snowflake/connections.toml
+      - name: Install Snowflake CLI + authenticate via OIDC
+        uses: snowflakedb/snowflake-actions@v3
+        with:
+          use-oidc: true
+          cli-version: "3.16"
+          default-config-file-path: ".github/ci-config.toml"
+          oidc-token-name: "SNOWFLAKE_CONNECTIONS_CI_TOKEN"
 
       - name: Login to SPCS registry
-        if: env.SNOWFLAKE_PAT != ''
-        env:
-          SNOWFLAKE_PAT: ${{ secrets.SNOWFLAKE_PAT }}
         run: snow spcs image-registry login --connection ci
 
       - name: Build and push images
-        if: env.SNOWFLAKE_PAT != ''
-        env:
-          SNOWFLAKE_PAT: ${{ secrets.SNOWFLAKE_PAT }}
         run: bash scripts/build_and_push.sh --connection ci
 
   # ---------------------------------------------------------------------------
   # Deploy — sync specs + flows + register deployments (manual)
+  #
+  # NOTE (2026-06-22): NOT yet migrated to OIDC. Two reasons:
+  #   1. The `snow` steps (stage copy, sync_flows) can adopt the build job's OIDC
+  #      pattern (snowflakedb/snowflake-actions + .github/ci-config.toml, -c ci).
+  #   2. BUT the Register/diff steps reach the SELF-HOSTED Prefect server through
+  #      its SPCS auth-proxy, which needs a Snowflake bearer token in
+  #      PREFECT_CLIENT_CUSTOM_HEADERS. A WIF/OIDC session does not yield a
+  #      reusable static bearer, so SNOWFLAKE_PAT is still required for that
+  #      header until the ingress accepts the WIF identity. Migrate the snow
+  #      steps first; keep the PAT scoped to the Prefect-header steps only.
   # ---------------------------------------------------------------------------
   deploy:
     name: Deploy

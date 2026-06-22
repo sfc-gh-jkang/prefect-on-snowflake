@@ -1,0 +1,9 @@
+default_connection_name = "ci"
+
+[connections.ci]
+account = "SFSENORTHAMERICA-JKANG_AWS_US_EAST_1_1"
+authenticator = "WORKLOAD_IDENTITY"
+workload_identity_provider = "OIDC"
+role = "PREFECT_CI_RL"
+database = "PREFECT_DB"
+schema = "PREFECT_SCHEMA"
