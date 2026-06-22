@@ -205,15 +205,12 @@ jobs:
   # ---------------------------------------------------------------------------
   # Deploy — sync specs + flows + register deployments (manual)
   #
-  # NOTE (2026-06-22): NOT yet migrated to OIDC. Two reasons:
-  #   1. The `snow` steps (stage copy, sync_flows) can adopt the build job's OIDC
-  #      pattern (snowflakedb/snowflake-actions + .github/ci-config.toml, -c ci).
-  #   2. BUT the Register/diff steps reach the SELF-HOSTED Prefect server through
-  #      its SPCS auth-proxy, which needs a Snowflake bearer token in
-  #      PREFECT_CLIENT_CUSTOM_HEADERS. A WIF/OIDC session does not yield a
-  #      reusable static bearer, so SNOWFLAKE_PAT is still required for that
-  #      header until the ingress accepts the WIF identity. Migrate the snow
-  #      steps first; keep the PAT scoped to the Prefect-header steps only.
+  # Auth (2026-06-22): the `snow` steps (spec/flow stage uploads) use GitHub OIDC
+  # like the build job (no PAT). SNOWFLAKE_PAT is retained ONLY for the steps that
+  # call the SELF-HOSTED Prefect server through its SPCS auth-proxy, which needs a
+  # Snowflake bearer in PREFECT_CLIENT_CUSTOM_HEADERS — a WIF/OIDC session yields
+  # no reusable static bearer, so the PAT stays scoped to those Prefect-API steps
+  # only (diff / register / automations) until the ingress accepts the WIF identity.
   # ---------------------------------------------------------------------------
   deploy:
     name: Deploy
@@ -229,9 +226,9 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install tools
+      - name: Install uv + project deps
         run: |
-          pip install uv "snowflake-cli-labs>=3.0,<4" --quiet
+          pip install uv --quiet
           uv sync
 
       - name: Cache uv
@@ -241,21 +238,13 @@ jobs:
           key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
           restore-keys: uv-${{ runner.os }}-
 
-      - name: Configure Snowflake connection
-        run: |
-          mkdir -p ~/.snowflake
-          cat > ~/.snowflake/connections.toml << 'TOML'
-          [ci]
-          account = "${{ secrets.SNOWFLAKE_ACCOUNT }}"
-          user = "${{ secrets.SNOWFLAKE_USER }}"
-          authenticator = "programmatic_access_token"
-          token = "${{ secrets.SNOWFLAKE_PAT }}"
-          role = "PREFECT_ROLE"
-          database = "PREFECT_DB"
-          schema = "PREFECT_SCHEMA"
-          warehouse = "PREFECT_WH"
-          TOML
-          chmod 0600 ~/.snowflake/connections.toml
+      - name: Install Snowflake CLI + authenticate via OIDC
+        uses: snowflakedb/snowflake-actions@v3
+        with:
+          use-oidc: true
+          cli-version: "3.16"
+          default-config-file-path: ".github/ci-config.toml"
+          oidc-token-name: "SNOWFLAKE_CONNECTIONS_CI_TOKEN"
 
       - name: Upload specs to stage
         run: snow stage copy specs/ @PREFECT_DB.PREFECT_SCHEMA.PREFECT_SPECS/ --overwrite --connection ci
