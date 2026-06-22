@@ -218,7 +218,10 @@ jobs:
     if: >
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'workflow_dispatch' && github.event.inputs.run_deploy == 'true')
-    needs: [build]
+    # No `needs: [build]`: build runs only on push, deploy only on workflow_dispatch,
+    # so they never co-run. A needs-dependency made dispatched deploys silently skip
+    # (a skipped dependency skips the dependent). Run `build` first via a push if you
+    # need fresh images, then dispatch deploy.
     environment: production
     steps:
       - uses: actions/checkout@v4
